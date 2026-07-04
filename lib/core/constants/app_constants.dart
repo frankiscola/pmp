@@ -31,7 +31,7 @@ class AppConstants {
   static const String typeMatching = 'matching';
   static const String typePulldown = 'pulldown';
   static const String typeCaseScenario = 'case_scenario';
-  static const String typeHotspot = 'hotspot';
+  static const String typeHotspot = 'point_and_click';
   static const String typeGraphic = 'graphic_based';
 
   static const Map<String, String> typeLabels = {

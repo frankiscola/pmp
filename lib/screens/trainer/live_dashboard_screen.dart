@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../models/answer.dart';
@@ -8,6 +9,7 @@ import '../../services/realtime_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/timer_widget.dart';
 import 'results_screen.dart';
 
 /// Dashboard live del trainer: mostra la domanda corrente, quanti
@@ -86,6 +88,20 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
           appBar: AppBar(
             title: Text('Domanda ${index + 1} / ${_questions.length}'),
             backgroundColor: AppColors.surface,
+            actions: [
+              if (session.settings.timerMode == AppConstants.timerPerQuestion)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Center(
+                    child: TimerWidget(
+                      key: ValueKey('trainer_timer_$index'),
+                      totalSeconds: session.settings.timerSecondsPerQuestion,
+                      onExpired: () {},
+                      compact: true,
+                    ),
+                  ),
+                ),
+            ],
           ),
           body: Padding(
             padding: const EdgeInsets.all(20),
@@ -100,7 +116,7 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                         label: Text(question.topic),
                         backgroundColor: AppColors.domainColor(
                           question.domain,
-                        ).withValues(alpha:0.12),
+                        ).withValues(alpha: 0.12),
                         labelStyle: TextStyle(
                           color: AppColors.domainColor(question.domain),
                         ),
@@ -213,8 +229,8 @@ class _StatBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      backgroundColor: color.withValues(alpha:0.08),
-      borderColor: color.withValues(alpha:0.3),
+      backgroundColor: color.withValues(alpha: 0.08),
+      borderColor: color.withValues(alpha: 0.3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

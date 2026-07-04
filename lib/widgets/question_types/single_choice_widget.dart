@@ -39,7 +39,9 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
   @override
   Widget build(BuildContext context) {
     final options = List<Map<String, dynamic>>.from(
-      widget.question.options['options'] as List? ?? widget.question.options['choices'] as List? ?? [],
+      widget.question.options['options'] as List? ??
+          widget.question.options['choices'] as List? ??
+          [],
     );
     final correctId = widget.showFeedback
         ? (widget.question.correctAnswers as List).first as String
@@ -60,7 +62,10 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
           if (id == correctId) {
             borderColor = AppColors.success;
             bgColor = AppColors.successBg;
-            trailingIcon = const Icon(Icons.check_circle, color: AppColors.success);
+            trailingIcon = const Icon(
+              Icons.check_circle,
+              color: AppColors.success,
+            );
           } else if (isSelected) {
             borderColor = AppColors.error;
             bgColor = AppColors.errorBg;
@@ -79,11 +84,17 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
               onTap: () => _select(id),
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: bgColor,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  border: Border.all(color: borderColor, width: isSelected ? 2 : 1),
+                  border: Border.all(
+                    color: borderColor,
+                    width: isSelected ? 2 : 1,
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -93,18 +104,26 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected ? AppColors.pmiGreen : AppColors.textTertiary,
+                          color: isSelected
+                              ? AppColors.pmiGreen
+                              : AppColors.textTertiary,
                           width: 2,
                         ),
-                        color: isSelected ? AppColors.pmiGreen : Colors.transparent,
+                        color: isSelected
+                            ? AppColors.pmiGreen
+                            : Colors.transparent,
                       ),
                       child: isSelected
-                          ? const Icon(Icons.check, size: 14, color: Colors.white)
+                          ? const Icon(
+                              Icons.check,
+                              size: 14,
+                              color: Colors.white,
+                            )
                           : null,
                     ),
                     const SizedBox(width: 12),
                     Expanded(child: Text(text, style: AppTextStyles.bodyLarge)),
-                    if (trailingIcon != null) trailingIcon,
+                    ?trailingIcon,
                   ],
                 ),
               ),

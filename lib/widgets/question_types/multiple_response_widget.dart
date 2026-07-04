@@ -51,10 +51,7 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Seleziona $requiredCount risposte',
-          style: AppTextStyles.label,
-        ),
+        Text('Seleziona $requiredCount risposte', style: AppTextStyles.label),
         const SizedBox(height: 12),
         ...options.map((opt) {
           final id = opt['id'] as String;
@@ -69,7 +66,10 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
             if (correctSet.contains(id)) {
               borderColor = AppColors.success;
               bgColor = AppColors.successBg;
-              trailingIcon = const Icon(Icons.check_circle, color: AppColors.success);
+              trailingIcon = const Icon(
+                Icons.check_circle,
+                color: AppColors.success,
+              );
             } else if (isSelected) {
               borderColor = AppColors.error;
               bgColor = AppColors.errorBg;
@@ -88,21 +88,33 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
                 onTap: () => _toggle(id),
                 borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: bgColor,
                     borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                    border: Border.all(color: borderColor, width: isSelected ? 2 : 1),
+                    border: Border.all(
+                      color: borderColor,
+                      width: isSelected ? 2 : 1,
+                    ),
                   ),
                   child: Row(
                     children: [
                       Icon(
-                        isSelected ? Icons.check_box : Icons.check_box_outline_blank,
-                        color: isSelected ? AppColors.pmiGreen : AppColors.textTertiary,
+                        isSelected
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        color: isSelected
+                            ? AppColors.pmiGreen
+                            : AppColors.textTertiary,
                       ),
                       const SizedBox(width: 12),
-                      Expanded(child: Text(text, style: AppTextStyles.bodyLarge)),
-                      if (trailingIcon != null) trailingIcon,
+                      Expanded(
+                        child: Text(text, style: AppTextStyles.bodyLarge),
+                      ),
+                      ?trailingIcon,
                     ],
                   ),
                 ),

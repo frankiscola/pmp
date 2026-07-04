@@ -48,8 +48,11 @@ class SupabaseService {
     return questions;
   }
 
-  /// Seleziona un set di domande rispettando i pesi ECO 2026
-  /// (People 33% · Process 41% · Business Environment 26%).
+  /// Seleziona un set di domande rispettando (quando possibile) i pesi ECO 2026
+  /// (People 33% · Process 41% · Business Environment 26%). Se un dominio non
+  /// ha abbastanza domande disponibili per la sua quota, lo shortfall viene
+  /// recuperato dagli altri domini — così il conteggio finale richiesto
+  /// (es. 20) viene sempre rispettato, invece di restituire un set più corto.
   Future<List<Question>> selectQuestionSet(int totalCount) async {
     final all = await fetchQuestions();
     final byDomain = <String, List<Question>>{
@@ -60,17 +63,42 @@ class SupabaseService {
     for (final q in all) {
       byDomain[q.domain]?.add(q);
     }
-    final weights = {'people': 0.33, 'process': 0.41, 'business_environment': 0.26};
-    final result = <Question>[];
+    final weights = {
+      'people': 0.33,
+      'process': 0.41,
+      'business_environment': 0.26,
+    };
     final random = Random();
+    final result = <Question>[];
+    final usedIds = <String>{};
+    var shortfall = 0;
+
+    // Prima passata: prova a prendere la quota pesata da ogni dominio
     weights.forEach((domain, weight) {
-      final count = (totalCount * weight).round();
+      final desired = (totalCount * weight).round();
       final pool = List<Question>.from(byDomain[domain] ?? []);
       pool.shuffle(random);
-      result.addAll(pool.take(count));
+      final taken = pool.take(desired).toList();
+      result.addAll(taken);
+      usedIds.addAll(taken.map((q) => q.id));
+      if (taken.length < desired) {
+        shortfall += desired - taken.length;
+      }
     });
+
+    // Seconda passata: colma lo shortfall pescando da TUTTE le domande
+    // rimanenti (di qualunque dominio), per raggiungere comunque totalCount.
+    if (shortfall > 0) {
+      final remaining = all.where((q) => !usedIds.contains(q.id)).toList();
+      remaining.shuffle(random);
+      final topUp = remaining.take(shortfall).toList();
+      result.addAll(topUp);
+      usedIds.addAll(topUp.map((q) => q.id));
+    }
+
     result.shuffle(random);
-    return result;
+    // Non superare mai il numero di domande realmente disponibili nel DB.
+    return result.take(totalCount.clamp(0, all.length)).toList();
   }
 
   // ---------------------------------------------------------------------
@@ -95,7 +123,9 @@ class SupabaseService {
   }) async {
     final trainerId = currentTrainer?.id;
     if (trainerId == null) {
-      throw StateError('Devi essere autenticato come trainer per creare una sessione.');
+      throw StateError(
+        'Devi essere autenticato come trainer per creare una sessione.',
+      );
     }
     final code = await _generateSessionCode();
     final row = {
@@ -106,7 +136,11 @@ class SupabaseService {
       'question_ids': questions.map((q) => q.id).toList(),
       'settings': settings.toJson(),
     };
-    final inserted = await _client.from('exam_sessions').insert(row).select().single();
+    final inserted = await _client
+        .from('exam_sessions')
+        .insert(row)
+        .select()
+        .single();
     return ExamSession.fromJson(inserted);
   }
 
@@ -115,10 +149,12 @@ class SupabaseService {
       final result = await _client.rpc('generate_session_code');
       return result as String;
     } catch (_) {
-      // Fallback lato client se la funzione SQL non è disponibile
+      // Fallback lato client se la funzione SQL non è disponibile:
+      // codice numerico a 6 cifre, facile da digitare su tastiera telefono
+      // (si apre automaticamente in modalità numerica, senza simboli).
       final random = Random();
-      final number = 1000 + random.nextInt(8999);
-      return 'PMP-$number';
+      final number = 100000 + random.nextInt(900000);
+      return '$number';
     }
   }
 
@@ -133,20 +169,27 @@ class SupabaseService {
   }
 
   Future<void> updateSessionStatus(String sessionId, String status) {
-    return _client.from('exam_sessions').update({'status': status}).eq('id', sessionId);
+    return _client
+        .from('exam_sessions')
+        .update({'status': status})
+        .eq('id', sessionId);
   }
 
   Future<void> goToQuestionIndex(String sessionId, int index) {
     return _client
         .from('exam_sessions')
-        .update({'current_question_index': index}).eq('id', sessionId);
+        .update({'current_question_index': index})
+        .eq('id', sessionId);
   }
 
   Future<void> finishSession(String sessionId) {
-    return _client.from('exam_sessions').update({
-      'status': 'finished',
-      'finished_at': DateTime.now().toIso8601String(),
-    }).eq('id', sessionId);
+    return _client
+        .from('exam_sessions')
+        .update({
+          'status': 'finished',
+          'finished_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', sessionId);
   }
 
   // ---------------------------------------------------------------------
@@ -160,7 +203,11 @@ class SupabaseService {
       'score': 0,
       'domain_scores': {'people': 0, 'process': 0, 'business_environment': 0},
     };
-    final inserted = await _client.from('participants').insert(row).select().single();
+    final inserted = await _client
+        .from('participants')
+        .insert(row)
+        .select()
+        .single();
     return Participant.fromJson(inserted);
   }
 
@@ -206,14 +253,20 @@ class SupabaseService {
         (participant['domain_scores'] as Map?) ?? {},
       );
       domainScores[question.domain] = (domainScores[question.domain] ?? 0) + 1;
-      await _client.from('participants').update({
-        'score': (participant['score'] as int? ?? 0) + 1,
-        'domain_scores': domainScores,
-      }).eq('id', participantId);
+      await _client
+          .from('participants')
+          .update({
+            'score': (participant['score'] as int? ?? 0) + 1,
+            'domain_scores': domainScores,
+          })
+          .eq('id', participantId);
     }
   }
 
-  Future<List<Answer>> fetchAnswersForQuestion(String sessionId, String questionId) async {
+  Future<List<Answer>> fetchAnswersForQuestion(
+    String sessionId,
+    String questionId,
+  ) async {
     final data = await _client
         .from('answers')
         .select()
@@ -225,7 +278,10 @@ class SupabaseService {
   }
 
   Future<List<Answer>> fetchAllAnswers(String sessionId) async {
-    final data = await _client.from('answers').select().eq('session_id', sessionId);
+    final data = await _client
+        .from('answers')
+        .select()
+        .eq('session_id', sessionId);
     return (data as List)
         .map((row) => Answer.fromJson(row as Map<String, dynamic>))
         .toList();
