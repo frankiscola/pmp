@@ -104,7 +104,7 @@ class Question {
       }
       return true;
     }
-    if (type == 'hotspot' || type == 'graphic_based') {
+    if (type == 'point_and_click' || type == 'graphic_based') {
       final correct = (correctAnswers as List).first;
       return givenAnswer == correct;
     }

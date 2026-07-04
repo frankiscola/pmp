@@ -6,6 +6,7 @@ import '../question_types/multiple_response_widget.dart';
 import '../question_types/matching_widget.dart';
 import '../question_types/pulldown_widget.dart';
 import '../question_types/case_scenario_widget.dart';
+import '../question_types/point_and_click_widget.dart';
 
 /// Sceglie il widget giusto in base a [Question.type]. Un solo punto
 /// nel codice sa "quale widget serve per quale tipo" — le schermate
@@ -50,10 +51,15 @@ class QuestionTypeRouter extends StatelessWidget {
           onAnswered: onAnswered,
         );
       case AppConstants.typeHotspot:
+        return PointAndClickWidget(
+          question: question,
+          revealed: revealed,
+          onAnswered: onAnswered,
+        );
       case AppConstants.typeGraphic:
-        // Point & Click e Graphic-Based: implementazione minimale,
-        // trattate come scelta singola su etichette testuali finché
-        // non aggiungiamo un CustomPainter dedicato per gli hotspot.
+        // Graphic-Based: per ora usa Single Choice testuale, dato che le
+        // domande di questo tipo (es. lettura di un network diagram) sono
+        // già strutturate con "options" id/text, non con hotspot cliccabili.
         return SingleChoiceWidget(
           question: question,
           revealed: revealed,
