@@ -25,10 +25,8 @@ class PulldownWidget extends StatefulWidget {
 
 class _PulldownWidgetState extends State<PulldownWidget> {
   final Map<String, String> _selections = {};
-  bool _locked = false;
 
   void _confirm() {
-    setState(() => _locked = true);
     widget.onAnswered(_selections);
   }
 
@@ -48,7 +46,7 @@ class _PulldownWidgetState extends State<PulldownWidget> {
           _buildDropdownRow(blank, correctMap),
           const SizedBox(height: 14),
         ],
-        if (!_locked) ...[
+        if (!widget.revealed) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
@@ -97,7 +95,7 @@ class _PulldownWidgetState extends State<PulldownWidget> {
             items: choices
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),
-            onChanged: _locked
+            onChanged: widget.revealed
                 ? null
                 : (value) {
                     if (value == null) return;

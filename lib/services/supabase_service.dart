@@ -238,6 +238,10 @@ class SupabaseService {
   // ---------------------------------------------------------------------
   // RISPOSTE
   // ---------------------------------------------------------------------
+  /// Salva la risposta di uno studente. Se lo studente aveva già risposto a
+  /// questa domanda (perché ha cambiato idea prima del "Rivela risposta" del
+  /// trainer), AGGIORNA la risposta esistente invece di inserirne una nuova,
+  /// correggendo anche il punteggio se la correttezza è cambiata.
   Future<void> submitAnswer({
     required String sessionId,
     required String participantId,
@@ -246,6 +250,53 @@ class SupabaseService {
     required int timeSpentSeconds,
   }) async {
     final correct = question.isCorrect(givenAnswer);
+
+    final existing = await _client
+        .from('answers')
+        .select()
+        .eq('session_id', sessionId)
+        .eq('participant_id', participantId)
+        .eq('question_id', question.id)
+        .maybeSingle();
+
+    if (existing != null) {
+      // Lo studente aveva già risposto: aggiorna la riga esistente.
+      await _client
+          .from('answers')
+          .update({
+            'given_answer': givenAnswer,
+            'is_correct': correct,
+            'time_spent_seconds': timeSpentSeconds,
+            'answered_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', existing['id']);
+
+      final wasCorrect = existing['is_correct'] as bool? ?? false;
+      if (wasCorrect != correct) {
+        // La correttezza è cambiata: correggi punteggio totale e per dominio.
+        final participant = await _client
+            .from('participants')
+            .select()
+            .eq('id', participantId)
+            .single();
+        final domainScores = Map<String, int>.from(
+          (participant['domain_scores'] as Map?) ?? {},
+        );
+        final delta = correct ? 1 : -1;
+        domainScores[question.domain] =
+            (domainScores[question.domain] ?? 0) + delta;
+        await _client
+            .from('participants')
+            .update({
+              'score': (participant['score'] as int? ?? 0) + delta,
+              'domain_scores': domainScores,
+            })
+            .eq('id', participantId);
+      }
+      return;
+    }
+
+    // Prima risposta a questa domanda: inserisci normalmente.
     await _client.from('answers').insert({
       'session_id': sessionId,
       'participant_id': participantId,

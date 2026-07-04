@@ -28,15 +28,14 @@ class MatchingWidget extends StatefulWidget {
 class _MatchingWidgetState extends State<MatchingWidget> {
   final Map<String, String> _matches = {}; // leftId -> rightId
   String? _activeLeftId;
-  bool _locked = false;
 
   void _selectLeft(String leftId) {
-    if (_locked) return;
+    if (widget.revealed) return; // dopo la rivelazione non si cambia più
     setState(() => _activeLeftId = _activeLeftId == leftId ? null : leftId);
   }
 
   void _selectRight(String rightId) {
-    if (_locked || _activeLeftId == null) return;
+    if (widget.revealed || _activeLeftId == null) return;
     setState(() {
       _matches.removeWhere((_, v) => v == rightId);
       _matches[_activeLeftId!] = rightId;
@@ -45,7 +44,6 @@ class _MatchingWidgetState extends State<MatchingWidget> {
   }
 
   void _confirm() {
-    setState(() => _locked = true);
     widget.onAnswered(_matches);
   }
 
@@ -65,8 +63,8 @@ class _MatchingWidgetState extends State<MatchingWidget> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          _locked
-              ? (widget.revealed ? 'Risultato:' : 'Risposta inviata')
+          widget.revealed
+              ? 'Risultato:'
               : (_activeLeftId == null
                     ? 'Tocca un termine, poi la sua descrizione'
                     : 'Ora tocca la descrizione corrispondente'),
@@ -85,7 +83,7 @@ class _MatchingWidgetState extends State<MatchingWidget> {
             ),
           ],
         ),
-        if (!_locked) ...[
+        if (!widget.revealed) ...[
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,

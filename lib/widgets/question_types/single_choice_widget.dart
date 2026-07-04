@@ -31,7 +31,7 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
   String? _selectedId;
 
   void _select(String optionId) {
-    if (_selectedId != null) return; // blocca dopo la prima scelta
+    if (widget.revealed) return; // dopo la rivelazione non si cambia più
     setState(() => _selectedId = optionId);
     widget.onAnswered(optionId);
   }
@@ -41,6 +41,9 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
     final options = List<Map<String, dynamic>>.from(
       widget.question.options['options'] as List? ??
           widget.question.options['choices'] as List? ??
+          (widget.question.options['hotspots'] as List?)
+              ?.map((h) => {'id': h['id'], 'text': h['label']})
+              .toList() ??
           [],
     );
     final correctId = widget.revealed

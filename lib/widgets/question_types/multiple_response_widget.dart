@@ -27,17 +27,15 @@ class MultipleResponseWidget extends StatefulWidget {
 
 class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
   final Set<String> _selected = {};
-  bool _locked = false;
 
   void _toggle(String id) {
-    if (_locked) return;
+    if (widget.revealed) return; // dopo la rivelazione non si cambia più
     setState(() {
       _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
     });
   }
 
   void _confirm() {
-    setState(() => _locked = true);
     widget.onAnswered(_selected.toList());
   }
 
@@ -125,7 +123,7 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
             ),
           );
         }),
-        if (!_locked) ...[
+        if (!widget.revealed) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,

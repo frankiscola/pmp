@@ -33,7 +33,7 @@ class QuestionScreen extends StatefulWidget {
 class _QuestionScreenState extends State<QuestionScreen> {
   List<Question> _questions = [];
   bool _loading = true;
-  int _lastAnsweredIndex = -1;
+  final Set<int> _answeredIndices = {};
   dynamic _currentAnswer;
   DateTime? _questionStartedAt;
 
@@ -57,8 +57,8 @@ class _QuestionScreenState extends State<QuestionScreen> {
   }
 
   Future<void> _submit(int index) async {
-    if (_lastAnsweredIndex == index || _currentAnswer == null) return;
-    _lastAnsweredIndex = index;
+    if (_currentAnswer == null) return;
+    _answeredIndices.add(index);
     final timeSpent = _questionStartedAt != null
         ? DateTime.now().difference(_questionStartedAt!).inSeconds
         : 0;
@@ -103,17 +103,10 @@ class _QuestionScreenState extends State<QuestionScreen> {
           );
         }
 
-        // Nuova domanda: resetta stato locale e timer
-        if (index != _lastAnsweredIndex &&
-            _currentAnswer != null &&
-            index != 0) {
-          // no-op: la logica di reset avviene sotto quando cambia la key del widget
-        }
-
         final question = _questions[index];
         final feedbackEnabled =
             session.settings.feedbackMode == AppConstants.feedbackImmediate;
-        final alreadyAnswered = _lastAnsweredIndex == index;
+        final alreadyAnswered = _answeredIndices.contains(index);
         // Il reveal (colori corretto/sbagliato + spiegazione) appare solo se
         // la modalità prevede feedback immediato E il trainer ha premuto
         // "Rivela risposta" per questa domanda.
@@ -173,7 +166,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   Center(
                     child: Text(
                       feedbackEnabled
-                          ? 'Risposta inviata! In attesa che il trainer riveli la risposta corretta...'
+                          ? 'Risposta inviata — puoi ancora cambiarla finché il trainer non rivela la risposta corretta.'
                           : 'Risposta inviata! Vedrai il punteggio a fine esame.',
                       style: AppTextStyles.caption,
                       textAlign: TextAlign.center,
