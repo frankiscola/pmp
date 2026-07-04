@@ -4,22 +4,21 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/question.dart';
 
-/// Matching / Enhanced Matching (drag & drop) — il tipo usato dalle
-/// 110 domande di David McLachlan. Su schermi stretti (smartphone)
-/// evitiamo il vero drag-and-drop (poco pratico col dito su liste lunghe)
-/// e usiamo un pattern più affidabile in mobile: tocca un termine a
-/// sinistra, poi tocca la descrizione a destra per abbinarli — stesso
-/// risultato del drag & drop, molto più preciso su touch screen.
+/// Matching / Enhanced Matching (drag & drop) — tap-to-match su mobile.
+///
+/// Lo studente abbina tutti i termini, poi preme "Conferma abbinamenti":
+/// da quel momento gli abbinamenti si bloccano (blu neutro). I colori
+/// corretto/sbagliato compaiono solo quando [revealed] diventa true.
 class MatchingWidget extends StatefulWidget {
   final Question question;
-  final bool showFeedback;
+  final bool revealed;
   final ValueChanged<Map<String, String>> onAnswered;
 
   const MatchingWidget({
     super.key,
     required this.question,
     required this.onAnswered,
-    this.showFeedback = false,
+    this.revealed = false,
   });
 
   @override
@@ -29,26 +28,25 @@ class MatchingWidget extends StatefulWidget {
 class _MatchingWidgetState extends State<MatchingWidget> {
   final Map<String, String> _matches = {}; // leftId -> rightId
   String? _activeLeftId;
-  bool _submitted = false;
+  bool _locked = false;
 
   void _selectLeft(String leftId) {
-    if (_submitted) return;
+    if (_locked) return;
     setState(() => _activeLeftId = _activeLeftId == leftId ? null : leftId);
   }
 
   void _selectRight(String rightId) {
-    if (_submitted || _activeLeftId == null) return;
+    if (_locked || _activeLeftId == null) return;
     setState(() {
-      // rimuovi eventuale match precedente che usava questo rightId
       _matches.removeWhere((_, v) => v == rightId);
       _matches[_activeLeftId!] = rightId;
       _activeLeftId = null;
     });
-    widget.onAnswered(_matches);
   }
 
   void _confirm() {
-    if (widget.showFeedback) setState(() => _submitted = true);
+    setState(() => _locked = true);
+    widget.onAnswered(_matches);
   }
 
   @override
@@ -59,7 +57,7 @@ class _MatchingWidgetState extends State<MatchingWidget> {
     final right = List<Map<String, dynamic>>.from(
       widget.question.options['right'] as List? ?? [],
     );
-    final correctMap = widget.showFeedback
+    final correctMap = widget.revealed
         ? Map<String, String>.from(widget.question.correctAnswers as Map)
         : <String, String>{};
 
@@ -67,21 +65,27 @@ class _MatchingWidgetState extends State<MatchingWidget> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          _activeLeftId == null
-              ? 'Tocca un termine, poi la sua descrizione'
-              : 'Ora tocca la descrizione corrispondente',
+          _locked
+              ? (widget.revealed ? 'Risultato:' : 'Risposta inviata')
+              : (_activeLeftId == null
+                    ? 'Tocca un termine, poi la sua descrizione'
+                    : 'Ora tocca la descrizione corrispondente'),
           style: AppTextStyles.label,
         ),
         const SizedBox(height: 12),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: _buildColumn(left, isLeft: true, correctMap: correctMap)),
+            Expanded(
+              child: _buildColumn(left, isLeft: true, correctMap: correctMap),
+            ),
             const SizedBox(width: 12),
-            Expanded(child: _buildColumn(right, isLeft: false, correctMap: correctMap)),
+            Expanded(
+              child: _buildColumn(right, isLeft: false, correctMap: correctMap),
+            ),
           ],
         ),
-        if (widget.showFeedback && !_submitted) ...[
+        if (!_locked) ...[
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,
@@ -106,15 +110,22 @@ class _MatchingWidgetState extends State<MatchingWidget> {
         final text = item['text'] as String;
 
         final isActive = isLeft && _activeLeftId == id;
-        final matchedLeftId = isLeft ? null : _matches.entries
-            .firstWhere((e) => e.value == id, orElse: () => const MapEntry('', ''))
-            .key;
-        final isMatched = isLeft ? _matches.containsKey(id) : matchedLeftId!.isNotEmpty;
+        final matchedLeftId = isLeft
+            ? null
+            : _matches.entries
+                  .firstWhere(
+                    (e) => e.value == id,
+                    orElse: () => const MapEntry('', ''),
+                  )
+                  .key;
+        final isMatched = isLeft
+            ? _matches.containsKey(id)
+            : matchedLeftId!.isNotEmpty;
 
         Color borderColor = AppColors.border;
         Color bgColor = AppColors.surface;
 
-        if (_submitted) {
+        if (widget.revealed) {
           final myMatchRight = isLeft ? _matches[id] : null;
           final isCorrectPair = isLeft
               ? (myMatchRight != null && correctMap[id] == myMatchRight)
@@ -139,12 +150,18 @@ class _MatchingWidgetState extends State<MatchingWidget> {
               onTap: () => isLeft ? _selectLeft(id) : _selectRight(id),
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
                 constraints: const BoxConstraints(minHeight: 56),
                 decoration: BoxDecoration(
                   color: bgColor,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  border: Border.all(color: borderColor, width: isActive ? 2 : 1),
+                  border: Border.all(
+                    color: borderColor,
+                    width: isActive ? 2 : 1,
+                  ),
                 ),
                 alignment: Alignment.centerLeft,
                 child: Text(

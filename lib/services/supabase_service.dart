@@ -178,7 +178,20 @@ class SupabaseService {
   Future<void> goToQuestionIndex(String sessionId, int index) {
     return _client
         .from('exam_sessions')
-        .update({'current_question_index': index})
+        .update({
+          'current_question_index': index,
+          'answer_revealed':
+              false, // reset: la nuova domanda parte non rivelata
+        })
+        .eq('id', sessionId);
+  }
+
+  /// Il trainer preme "Rivela risposta": tutti gli studenti connessi vedono
+  /// istantaneamente (via realtime) corretto/sbagliato e la spiegazione.
+  Future<void> revealAnswer(String sessionId) {
+    return _client
+        .from('exam_sessions')
+        .update({'answer_revealed': true})
         .eq('id', sessionId);
   }
 

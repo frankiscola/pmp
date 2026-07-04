@@ -12,14 +12,14 @@ import '../question_types/case_scenario_widget.dart';
 /// che mostrano domande (question_screen.dart) non devono saperlo.
 class QuestionTypeRouter extends StatelessWidget {
   final Question question;
-  final bool showFeedback;
+  final bool revealed;
   final ValueChanged<dynamic> onAnswered;
 
   const QuestionTypeRouter({
     super.key,
     required this.question,
     required this.onAnswered,
-    this.showFeedback = false,
+    this.revealed = false,
   });
 
   @override
@@ -28,25 +28,25 @@ class QuestionTypeRouter extends StatelessWidget {
       case AppConstants.typeMultipleResponse:
         return MultipleResponseWidget(
           question: question,
-          showFeedback: showFeedback,
+          revealed: revealed,
           onAnswered: onAnswered,
         );
       case AppConstants.typeMatching:
         return MatchingWidget(
           question: question,
-          showFeedback: showFeedback,
+          revealed: revealed,
           onAnswered: onAnswered,
         );
       case AppConstants.typePulldown:
         return PulldownWidget(
           question: question,
-          showFeedback: showFeedback,
+          revealed: revealed,
           onAnswered: onAnswered,
         );
       case AppConstants.typeCaseScenario:
         return CaseScenarioWidget(
           question: question,
-          showFeedback: showFeedback,
+          revealed: revealed,
           onAnswered: onAnswered,
         );
       case AppConstants.typeHotspot:
@@ -56,14 +56,14 @@ class QuestionTypeRouter extends StatelessWidget {
         // non aggiungiamo un CustomPainter dedicato per gli hotspot.
         return SingleChoiceWidget(
           question: question,
-          showFeedback: showFeedback,
+          revealed: revealed,
           onAnswered: onAnswered,
         );
       case AppConstants.typeSingleChoice:
       default:
         return SingleChoiceWidget(
           question: question,
-          showFeedback: showFeedback,
+          revealed: revealed,
           onAnswered: onAnswered,
         );
     }

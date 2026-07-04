@@ -4,19 +4,19 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/question.dart';
 
-/// Pull-down List — testo con una o più "lacune" da completare
-/// scegliendo da un menu a tendina. Il questionText usa il segnaposto
-/// {{b1}}, {{b2}}, ... per indicare dove inserire ogni dropdown.
+/// Pull-down List — testo con lacune da completare scegliendo da un menu
+/// a tendina. Dopo "Conferma risposta" le scelte si bloccano (blu neutro);
+/// i colori corretto/sbagliato compaiono solo quando [revealed] è true.
 class PulldownWidget extends StatefulWidget {
   final Question question;
-  final bool showFeedback;
+  final bool revealed;
   final ValueChanged<Map<String, String>> onAnswered;
 
   const PulldownWidget({
     super.key,
     required this.question,
     required this.onAnswered,
-    this.showFeedback = false,
+    this.revealed = false,
   });
 
   @override
@@ -25,14 +25,19 @@ class PulldownWidget extends StatefulWidget {
 
 class _PulldownWidgetState extends State<PulldownWidget> {
   final Map<String, String> _selections = {};
-  bool _submitted = false;
+  bool _locked = false;
+
+  void _confirm() {
+    setState(() => _locked = true);
+    widget.onAnswered(_selections);
+  }
 
   @override
   Widget build(BuildContext context) {
     final blanks = List<Map<String, dynamic>>.from(
       widget.question.options['blanks'] as List? ?? [],
     );
-    final correctMap = widget.showFeedback
+    final correctMap = widget.revealed
         ? Map<String, String>.from(widget.question.correctAnswers as Map)
         : <String, String>{};
 
@@ -43,14 +48,12 @@ class _PulldownWidgetState extends State<PulldownWidget> {
           _buildDropdownRow(blank, correctMap),
           const SizedBox(height: 14),
         ],
-        if (widget.showFeedback && !_submitted) ...[
+        if (!_locked) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: _selections.length == blanks.length
-                  ? () => setState(() => _submitted = true)
-                  : null,
+              onPressed: _selections.length == blanks.length ? _confirm : null,
               child: const Text('Conferma risposta'),
             ),
           ),
@@ -59,17 +62,22 @@ class _PulldownWidgetState extends State<PulldownWidget> {
     );
   }
 
-  Widget _buildDropdownRow(Map<String, dynamic> blank, Map<String, String> correctMap) {
+  Widget _buildDropdownRow(
+    Map<String, dynamic> blank,
+    Map<String, String> correctMap,
+  ) {
     final id = blank['id'] as String;
     final label = blank['label'] as String? ?? id;
     final choices = List<String>.from(blank['choices'] as List);
     final selected = _selections[id];
 
     Color borderColor = AppColors.border;
-    if (_submitted) {
-      borderColor = selected == correctMap[id] ? AppColors.success : AppColors.error;
+    if (widget.revealed) {
+      borderColor = selected == correctMap[id]
+          ? AppColors.success
+          : AppColors.error;
     } else if (selected != null) {
-      borderColor = AppColors.pmiGreen;
+      borderColor = AppColors.pmiBlue;
     }
 
     return Container(
@@ -89,12 +97,11 @@ class _PulldownWidgetState extends State<PulldownWidget> {
             items: choices
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),
-            onChanged: _submitted
+            onChanged: _locked
                 ? null
                 : (value) {
                     if (value == null) return;
                     setState(() => _selections[id] = value);
-                    widget.onAnswered(_selections);
                   },
           ),
         ],

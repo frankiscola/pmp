@@ -12,14 +12,14 @@ import 'multiple_response_widget.dart';
 /// ricordarselo a memoria — esattamente come nel vero CBT PMI.
 class CaseScenarioWidget extends StatefulWidget {
   final Question question;
-  final bool showFeedback;
+  final bool revealed;
   final ValueChanged<Map<String, dynamic>> onAnswered;
 
   const CaseScenarioWidget({
     super.key,
     required this.question,
     required this.onAnswered,
-    this.showFeedback = false,
+    this.revealed = false,
   });
 
   @override
@@ -63,7 +63,7 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
                         color: AppColors.pmiBlue,
                       ),
                       const SizedBox(width: 8),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'Scenario',
                           style: AppTextStyles.titleMedium,
@@ -113,7 +113,7 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
     if (type == 'multiple_response') {
       return MultipleResponseWidget(
         question: subQuestion,
-        showFeedback: widget.showFeedback,
+        revealed: widget.revealed,
         onAnswered: (answer) {
           _subAnswers['sub_$index'] = answer;
           widget.onAnswered(_subAnswers);
@@ -122,7 +122,7 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
     }
     return SingleChoiceWidget(
       question: subQuestion,
-      showFeedback: widget.showFeedback,
+      revealed: widget.revealed,
       onAnswered: (answer) {
         _subAnswers['sub_$index'] = answer;
         widget.onAnswered(_subAnswers);

@@ -13,6 +13,11 @@ class ExamSession {
   final List<String> questionIds;
   final ExamSettings settings;
 
+  /// True quando il trainer ha premuto "Rivela risposta" per la domanda
+  /// corrente — solo allora gli studenti vedono corretto/sbagliato e la
+  /// spiegazione. Si resetta a false ad ogni cambio di domanda.
+  final bool answerRevealed;
+
   const ExamSession({
     required this.id,
     required this.code,
@@ -21,6 +26,7 @@ class ExamSession {
     required this.currentQuestionIndex,
     required this.questionIds,
     required this.settings,
+    this.answerRevealed = false,
     this.startedAt,
     this.finishedAt,
   });
@@ -40,8 +46,11 @@ class ExamSession {
           : null,
       questionIds: List<String>.from(json['question_ids'] as List? ?? []),
       settings: json['settings'] != null
-          ? ExamSettings.fromJson(Map<String, dynamic>.from(json['settings'] as Map))
+          ? ExamSettings.fromJson(
+              Map<String, dynamic>.from(json['settings'] as Map),
+            )
           : const ExamSettings(),
+      answerRevealed: json['answer_revealed'] as bool? ?? false,
     );
   }
 
@@ -56,6 +65,7 @@ class ExamSession {
       'finished_at': finishedAt?.toIso8601String(),
       'question_ids': questionIds,
       'settings': settings.toJson(),
+      'answer_revealed': answerRevealed,
     };
   }
 
@@ -64,6 +74,7 @@ class ExamSession {
     int? currentQuestionIndex,
     DateTime? startedAt,
     DateTime? finishedAt,
+    bool? answerRevealed,
   }) {
     return ExamSession(
       id: id,
@@ -75,6 +86,7 @@ class ExamSession {
       finishedAt: finishedAt ?? this.finishedAt,
       questionIds: questionIds,
       settings: settings,
+      answerRevealed: answerRevealed ?? this.answerRevealed,
     );
   }
 }

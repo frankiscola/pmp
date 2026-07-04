@@ -4,18 +4,21 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/question.dart';
 
-/// Multiple-Response Questions (~20% dell'esame) — checkbox multipli,
-/// lo studente sceglie tutte le opzioni che ritiene corrette.
+/// Multiple-Response Questions (~20% dell'esame) — checkbox multipli.
+///
+/// Lo studente seleziona liberamente finché non preme "Conferma risposta":
+/// da quel momento la selezione si blocca (blu neutro). I colori
+/// corretto/sbagliato compaiono solo quando [revealed] diventa true.
 class MultipleResponseWidget extends StatefulWidget {
   final Question question;
-  final bool showFeedback;
+  final bool revealed;
   final ValueChanged<List<String>> onAnswered;
 
   const MultipleResponseWidget({
     super.key,
     required this.question,
     required this.onAnswered,
-    this.showFeedback = false,
+    this.revealed = false,
   });
 
   @override
@@ -24,18 +27,18 @@ class MultipleResponseWidget extends StatefulWidget {
 
 class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
   final Set<String> _selected = {};
-  bool _submitted = false;
+  bool _locked = false;
 
   void _toggle(String id) {
-    if (_submitted) return;
+    if (_locked) return;
     setState(() {
       _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
     });
-    widget.onAnswered(_selected.toList());
   }
 
   void _confirm() {
-    if (widget.showFeedback) setState(() => _submitted = true);
+    setState(() => _locked = true);
+    widget.onAnswered(_selected.toList());
   }
 
   @override
@@ -43,7 +46,7 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
     final options = List<Map<String, dynamic>>.from(
       widget.question.options['options'] as List? ?? [],
     );
-    final correctSet = widget.showFeedback
+    final correctSet = widget.revealed
         ? Set<String>.from(widget.question.correctAnswers as List)
         : <String>{};
     final requiredCount = (widget.question.correctAnswers as List).length;
@@ -62,7 +65,7 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
           Color bgColor = AppColors.surface;
           Widget? trailingIcon;
 
-          if (_submitted) {
+          if (widget.revealed) {
             if (correctSet.contains(id)) {
               borderColor = AppColors.success;
               bgColor = AppColors.successBg;
@@ -76,8 +79,8 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
               trailingIcon = const Icon(Icons.cancel, color: AppColors.error);
             }
           } else if (isSelected) {
-            borderColor = AppColors.pmiGreen;
-            bgColor = AppColors.pmiGreenLight;
+            borderColor = AppColors.pmiBlue;
+            bgColor = AppColors.infoBg;
           }
 
           return Padding(
@@ -107,14 +110,14 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
                             ? Icons.check_box
                             : Icons.check_box_outline_blank,
                         color: isSelected
-                            ? AppColors.pmiGreen
+                            ? borderColor
                             : AppColors.textTertiary,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(text, style: AppTextStyles.bodyLarge),
                       ),
-                      ?trailingIcon,
+                      if (trailingIcon != null) trailingIcon,
                     ],
                   ),
                 ),
@@ -122,7 +125,7 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
             ),
           );
         }),
-        if (widget.showFeedback && !_submitted) ...[
+        if (!_locked) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,

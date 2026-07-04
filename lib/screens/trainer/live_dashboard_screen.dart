@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/theme/app_theme.dart';
 import '../../models/answer.dart';
 import '../../models/exam_session.dart';
 import '../../models/question.dart';
@@ -116,7 +117,7 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                         label: Text(question.topic),
                         backgroundColor: AppColors.domainColor(
                           question.domain,
-                        ).withValues(alpha: 0.12),
+                        ).withOpacity(0.12),
                         labelStyle: TextStyle(
                           color: AppColors.domainColor(question.domain),
                         ),
@@ -198,6 +199,58 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                if (!session.answerRevealed)
+                  AppButton(
+                    label: 'Rivela risposta',
+                    icon: Icons.visibility,
+                    variant: AppButtonVariant.secondary,
+                    fullWidth: true,
+                    onPressed: () async {
+                      try {
+                        await SupabaseService.instance.revealAnswer(
+                          widget.session.id,
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Errore nel rivelare la risposta: $e',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.successBg,
+                      borderRadius: BorderRadius.circular(
+                        AppTheme.radiusMedium,
+                      ),
+                      border: Border.all(color: AppColors.success),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Risposta rivelata agli studenti',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
                 AppButton(
                   label: index + 1 >= _questions.length
                       ? 'Termina esame'
@@ -229,8 +282,8 @@ class _StatBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      backgroundColor: color.withValues(alpha: 0.08),
-      borderColor: color.withValues(alpha: 0.3),
+      backgroundColor: color.withOpacity(0.08),
+      borderColor: color.withOpacity(0.3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -20,7 +20,11 @@ class QuestionScreen extends StatefulWidget {
   final ExamSession session;
   final Participant participant;
 
-  const QuestionScreen({super.key, required this.session, required this.participant});
+  const QuestionScreen({
+    super.key,
+    required this.session,
+    required this.participant,
+  });
 
   @override
   State<QuestionScreen> createState() => _QuestionScreenState();
@@ -83,7 +87,10 @@ class _QuestionScreenState extends State<QuestionScreen> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (_) => ScoreScreen(session: session, participant: widget.participant),
+                builder: (_) => ScoreScreen(
+                  session: session,
+                  participant: widget.participant,
+                ),
               ),
             );
           });
@@ -91,17 +98,26 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
         final index = session.currentQuestionIndex;
         if (index >= _questions.length) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         // Nuova domanda: resetta stato locale e timer
-        if (index != _lastAnsweredIndex && _currentAnswer != null && index != 0) {
+        if (index != _lastAnsweredIndex &&
+            _currentAnswer != null &&
+            index != 0) {
           // no-op: la logica di reset avviene sotto quando cambia la key del widget
         }
 
         final question = _questions[index];
-        final showFeedback = session.settings.feedbackMode == AppConstants.feedbackImmediate;
+        final feedbackEnabled =
+            session.settings.feedbackMode == AppConstants.feedbackImmediate;
         final alreadyAnswered = _lastAnsweredIndex == index;
+        // Il reveal (colori corretto/sbagliato + spiegazione) appare solo se
+        // la modalità prevede feedback immediato E il trainer ha premuto
+        // "Rivela risposta" per questa domanda.
+        final revealed = feedbackEnabled && session.answerRevealed;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -136,20 +152,35 @@ class _QuestionScreenState extends State<QuestionScreen> {
                 ),
                 const SizedBox(height: 20),
                 AppCard(
-                  child: Text(question.questionText, style: AppTextStyles.question),
+                  child: Text(
+                    question.questionText,
+                    style: AppTextStyles.question,
+                  ),
                 ),
                 const SizedBox(height: 20),
                 QuestionTypeRouter(
                   key: ValueKey('router_$index'),
                   question: question,
-                  showFeedback: showFeedback && alreadyAnswered,
+                  revealed: revealed,
                   onAnswered: (answer) {
                     _currentAnswer = answer;
                     _submit(index);
                     setState(() {});
                   },
                 ),
-                if (showFeedback && alreadyAnswered) ...[
+                if (alreadyAnswered && !revealed) ...[
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Text(
+                      feedbackEnabled
+                          ? 'Risposta inviata! In attesa che il trainer riveli la risposta corretta...'
+                          : 'Risposta inviata! Vedrai il punteggio a fine esame.',
+                      style: AppTextStyles.caption,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+                if (revealed) ...[
                   const SizedBox(height: 20),
                   AppCard(
                     backgroundColor: AppColors.infoBg,
@@ -157,14 +188,22 @@ class _QuestionScreenState extends State<QuestionScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Spiegazione', style: AppTextStyles.label.copyWith(color: AppColors.pmiBlue)),
+                        Text(
+                          'Spiegazione',
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.pmiBlue,
+                          ),
+                        ),
                         const SizedBox(height: 6),
-                        Text(question.explanation, style: AppTextStyles.bodyLarge),
+                        Text(
+                          question.explanation,
+                          style: AppTextStyles.bodyLarge,
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
-                  const Center(
+                  Center(
                     child: Text(
                       'In attesa che il trainer passi alla prossima domanda...',
                       style: AppTextStyles.caption,

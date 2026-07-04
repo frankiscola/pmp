@@ -5,18 +5,22 @@ import '../../core/theme/app_theme.dart';
 import '../../models/question.dart';
 
 /// Multiple-Choice Single Response — il tipo più comune (~50% dell'esame).
-/// Radio-style ma implementato con Container tappabili (touch target
-/// più grande, migliore su smartphone rispetto a un Radio nativo piccolo).
+///
+/// Comportamento:
+/// - Al primo tap la scelta si BLOCCA (non modificabile) e appare in blu
+///   neutro — nessun giudizio di correttezza ancora.
+/// - Solo quando [revealed] diventa true (il trainer ha premuto "Rivela
+///   risposta") i colori cambiano a verde/rosso in base alla correttezza.
 class SingleChoiceWidget extends StatefulWidget {
   final Question question;
-  final bool showFeedback;
+  final bool revealed;
   final ValueChanged<String> onAnswered;
 
   const SingleChoiceWidget({
     super.key,
     required this.question,
     required this.onAnswered,
-    this.showFeedback = false,
+    this.revealed = false,
   });
 
   @override
@@ -25,15 +29,11 @@ class SingleChoiceWidget extends StatefulWidget {
 
 class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
   String? _selectedId;
-  bool _submitted = false;
 
   void _select(String optionId) {
-    if (_submitted) return;
+    if (_selectedId != null) return; // blocca dopo la prima scelta
     setState(() => _selectedId = optionId);
     widget.onAnswered(optionId);
-    if (widget.showFeedback) {
-      setState(() => _submitted = true);
-    }
   }
 
   @override
@@ -43,7 +43,7 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
           widget.question.options['choices'] as List? ??
           [],
     );
-    final correctId = widget.showFeedback
+    final correctId = widget.revealed
         ? (widget.question.correctAnswers as List).first as String
         : null;
 
@@ -58,7 +58,7 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
         Color bgColor = AppColors.surface;
         Widget? trailingIcon;
 
-        if (_submitted && correctId != null) {
+        if (widget.revealed && correctId != null) {
           if (id == correctId) {
             borderColor = AppColors.success;
             bgColor = AppColors.successBg;
@@ -72,8 +72,9 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
             trailingIcon = const Icon(Icons.cancel, color: AppColors.error);
           }
         } else if (isSelected) {
-          borderColor = AppColors.pmiGreen;
-          bgColor = AppColors.pmiGreenLight;
+          // Selezionata ma non ancora rivelata: blu neutro, mai verde/rosso.
+          borderColor = AppColors.pmiBlue;
+          bgColor = AppColors.infoBg;
         }
 
         return Padding(
@@ -105,13 +106,11 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: isSelected
-                              ? AppColors.pmiGreen
+                              ? borderColor
                               : AppColors.textTertiary,
                           width: 2,
                         ),
-                        color: isSelected
-                            ? AppColors.pmiGreen
-                            : Colors.transparent,
+                        color: isSelected ? borderColor : Colors.transparent,
                       ),
                       child: isSelected
                           ? const Icon(
@@ -123,7 +122,7 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(child: Text(text, style: AppTextStyles.bodyLarge)),
-                    ?trailingIcon,
+                    if (trailingIcon != null) trailingIcon,
                   ],
                 ),
               ),
