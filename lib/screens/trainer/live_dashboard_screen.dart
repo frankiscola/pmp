@@ -117,7 +117,7 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                         label: Text(question.topic),
                         backgroundColor: AppColors.domainColor(
                           question.domain,
-                        ).withOpacity(0.12),
+                        ).withValues(alpha: 0.12),
                         labelStyle: TextStyle(
                           color: AppColors.domainColor(question.domain),
                         ),
@@ -282,8 +282,8 @@ class _StatBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      backgroundColor: color.withOpacity(0.08),
-      borderColor: color.withOpacity(0.3),
+      backgroundColor: color.withValues(alpha: 0.08),
+      borderColor: color.withValues(alpha: 0.3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
