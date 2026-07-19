@@ -6,7 +6,7 @@ import '../../models/participant.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
-import '../entry_screen.dart';
+import 'trainer_home_screen.dart';
 
 /// Classifica e analisi finale al termine della sessione: punteggio
 /// per studente e suddivisione per dominio, utile per capire su cosa
@@ -61,11 +61,13 @@ class _ResultsScreenState extends State<ResultsScreen> {
                     ],
                     const SizedBox(height: 24),
                     AppButton(
-                      label: 'Torna alla home',
+                      label: 'Nuova sessione',
                       fullWidth: true,
                       variant: AppButtonVariant.outline,
                       onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const EntryScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const TrainerHomeScreen(),
+                        ),
                         (route) => false,
                       ),
                     ),

@@ -7,7 +7,7 @@ import '../../models/participant.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
-import '../entry_screen.dart';
+import 'join_screen.dart';
 
 /// Schermata finale dello studente: punteggio totale e suddivisione
 /// per dominio (People / Process / Business Environment).
@@ -126,12 +126,12 @@ class _ScoreScreenState extends State<ScoreScreen> {
                         ),
                         const SizedBox(height: 32),
                         AppButton(
-                          label: 'Torna alla home',
+                          label: 'Nuovo quiz',
                           fullWidth: true,
                           onPressed: () =>
                               Navigator.of(context).pushAndRemoveUntil(
                                 MaterialPageRoute(
-                                  builder: (_) => const EntryScreen(),
+                                  builder: (_) => const JoinScreen(),
                                 ),
                                 (route) => false,
                               ),
