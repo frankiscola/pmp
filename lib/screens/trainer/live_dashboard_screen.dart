@@ -13,9 +13,10 @@ import '../../widgets/common/app_card.dart';
 import '../../widgets/common/timer_widget.dart';
 import 'results_screen.dart';
 
-/// Dashboard live del trainer: mostra la domanda corrente, quanti
-/// hanno risposto e la distribuzione delle risposte in tempo reale,
-/// con il controllo per avanzare manualmente alla prossima domanda.
+/// Dashboard live del trainer: mostra la domanda corrente, quanti hanno
+/// risposto, la DISTRIBUZIONE delle risposte per opzione (non solo un
+/// generico corretto/sbagliato), e i controlli per rivelare la risposta
+/// e avanzare alla prossima domanda.
 class LiveDashboardScreen extends StatefulWidget {
   final ExamSession session;
 
@@ -45,6 +46,17 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
           .toList();
       _loading = false;
     });
+  }
+
+  /// Secondi rimanenti del timer totale. Se per qualche motivo l'orario di
+  /// inizio non è ancora disponibile, usa il tempo pieno invece di
+  /// nascondere il timer.
+  int _totalExamRemainingSeconds(ExamSession session) {
+    final totalSeconds = session.settings.totalExamMinutes * 60;
+    if (session.startedAt == null) return totalSeconds;
+    final elapsed = DateTime.now().difference(session.startedAt!).inSeconds;
+    final remaining = totalSeconds - elapsed;
+    return remaining > 0 ? remaining : 0;
   }
 
   Future<void> _nextQuestion(int currentIndex) async {
@@ -102,6 +114,18 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                     ),
                   ),
                 ),
+              if (session.settings.timerMode == AppConstants.timerTotal)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Center(
+                    child: TimerWidget(
+                      key: const ValueKey('trainer_total_exam_timer'),
+                      totalSeconds: _totalExamRemainingSeconds(session),
+                      onExpired: () {},
+                      compact: true,
+                    ),
+                  ),
+                ),
             ],
           ),
           body: Padding(
@@ -117,7 +141,7 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                         label: Text(question.topic),
                         backgroundColor: AppColors.domainColor(
                           question.domain,
-                        ).withValues(alpha: 0.12),
+                        ).withOpacity(0.12),
                         labelStyle: TextStyle(
                           color: AppColors.domainColor(question.domain),
                         ),
@@ -172,23 +196,17 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                           const SizedBox(height: 20),
                           Expanded(
                             child: AppCard(
-                              child: total == 0
+                              child: answers.isEmpty
                                   ? const Center(
                                       child: Text(
                                         'In attesa delle prime risposte...',
                                       ),
                                     )
-                                  : Center(
-                                      child: LinearProgressIndicator(
-                                        value: total == 0
-                                            ? 0
-                                            : correctCount / total,
-                                        minHeight: 24,
-                                        backgroundColor: AppColors.errorBg,
-                                        valueColor:
-                                            const AlwaysStoppedAnimation(
-                                              AppColors.pmiGreen,
-                                            ),
+                                  : SingleChildScrollView(
+                                      child: _AnswerDistribution(
+                                        question: question,
+                                        answers: answers,
+                                        revealed: session.answerRevealed,
                                       ),
                                     ),
                             ),
@@ -282,8 +300,8 @@ class _StatBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      backgroundColor: color.withValues(alpha: 0.08),
-      borderColor: color.withValues(alpha: 0.3),
+      backgroundColor: color.withOpacity(0.08),
+      borderColor: color.withOpacity(0.3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -291,6 +309,150 @@ class _StatBox extends StatelessWidget {
           const SizedBox(height: 4),
           Text(value, style: AppTextStyles.titleLarge.copyWith(color: color)),
         ],
+      ),
+    );
+  }
+}
+
+/// Sostituisce la vecchia barra generica corretto/sbagliato con la
+/// distribuzione REALE delle risposte per opzione — molto più utile per
+/// un trainer: mostra a colpo d'occhio dove il gruppo si è diviso.
+/// Prima del "Rivela risposta" le barre sono neutre (blu); dopo, l'opzione
+/// corretta diventa verde e le altre restano grigie.
+class _AnswerDistribution extends StatelessWidget {
+  final Question question;
+  final List<Answer> answers;
+  final bool revealed;
+
+  const _AnswerDistribution({
+    required this.question,
+    required this.answers,
+    required this.revealed,
+  });
+
+  List<Map<String, dynamic>> get _options {
+    final raw =
+        question.options['options'] as List? ??
+        (question.options['hotspots'] as List?)
+            ?.map((h) => {'id': h['id'], 'text': h['label']})
+            .toList();
+    return List<Map<String, dynamic>>.from(raw ?? []);
+  }
+
+  Set<String> get _correctIds {
+    final correct = question.correctAnswers;
+    if (correct is List) return Set<String>.from(correct);
+    return {};
+  }
+
+  /// Estrae l'id (o gli id) scelti da una singola risposta, indipendentemente
+  /// dal fatto che sia una stringa singola (single choice) o una lista
+  /// (multiple response).
+  List<String> _idsFrom(dynamic givenAnswer) {
+    if (givenAnswer is String) return [givenAnswer];
+    if (givenAnswer is List) return List<String>.from(givenAnswer);
+    return [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = _options;
+
+    // Per i tipi con struttura non riducibile a "opzioni con id/testo"
+    // (matching, pull-down, case scenario) mostriamo un messaggio semplice
+    // invece di una distribuzione fuorviante.
+    if (options.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Text(
+          'La distribuzione per opzione non è disponibile per questo tipo di domanda.',
+          style: AppTextStyles.bodyMedium,
+        ),
+      );
+    }
+
+    final counts = <String, int>{for (final o in options) o['id'] as String: 0};
+    for (final a in answers) {
+      for (final id in _idsFrom(a.givenAnswer)) {
+        if (counts.containsKey(id)) counts[id] = counts[id]! + 1;
+      }
+    }
+    final totalAnswers = answers.length;
+    final maxCount = counts.values.isEmpty
+        ? 0
+        : counts.values.reduce((a, b) => a > b ? a : b);
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: options.map((opt) {
+          final id = opt['id'] as String;
+          final text = opt['text'] as String;
+          final count = counts[id] ?? 0;
+          final fraction = maxCount == 0 ? 0.0 : count / maxCount;
+          final percent = totalAnswers == 0
+              ? 0
+              : (count / totalAnswers * 100).round();
+
+          Color barColor = AppColors.pmiBlue;
+          if (revealed) {
+            barColor = _correctIds.contains(id)
+                ? AppColors.pmiGreen
+                : AppColors.textTertiary;
+          }
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        text,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: revealed && _correctIds.contains(id)
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (revealed && _correctIds.contains(id))
+                      const Padding(
+                        padding: EdgeInsets.only(left: 6),
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 16,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$count ($percent%)',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: barColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: fraction,
+                    minHeight: 10,
+                    backgroundColor: AppColors.divider,
+                    valueColor: AlwaysStoppedAnimation(barColor),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
