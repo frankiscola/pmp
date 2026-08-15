@@ -18,6 +18,16 @@ class ExamSession {
   /// spiegazione. Si resetta a false ad ogni cambio di domanda.
   final bool answerRevealed;
 
+  /// Timestamp di inizio dell'attuale pausa (Break), null se non in pausa.
+  /// Usato insieme a [pausedSecondsTotal] per "congelare" correttamente il
+  /// timer totale dell'esame durante il Break.
+  final DateTime? pausedAt;
+
+  /// Somma dei secondi trascorsi in TUTTE le pause precedenti (già concluse)
+  /// di questa sessione. Non include la pausa in corso, che è tracciata da
+  /// [pausedAt]. Si aggiorna ogni volta che il trainer riprende l'esame.
+  final int pausedSecondsTotal;
+
   const ExamSession({
     required this.id,
     required this.code,
@@ -29,6 +39,8 @@ class ExamSession {
     this.answerRevealed = false,
     this.startedAt,
     this.finishedAt,
+    this.pausedAt,
+    this.pausedSecondsTotal = 0,
   });
 
   factory ExamSession.fromJson(Map<String, dynamic> json) {
@@ -51,6 +63,10 @@ class ExamSession {
             )
           : const ExamSettings(),
       answerRevealed: json['answer_revealed'] as bool? ?? false,
+      pausedAt: json['paused_at'] != null
+          ? DateTime.parse(json['paused_at'] as String)
+          : null,
+      pausedSecondsTotal: json['paused_seconds_total'] as int? ?? 0,
     );
   }
 
@@ -66,7 +82,29 @@ class ExamSession {
       'question_ids': questionIds,
       'settings': settings.toJson(),
       'answer_revealed': answerRevealed,
+      'paused_at': pausedAt?.toIso8601String(),
+      'paused_seconds_total': pausedSecondsTotal,
     };
+  }
+
+  /// Secondi rimanenti del timer "intero esame" (timerMode == total).
+  /// Se la sessione non è ancora partita (startedAt nullo, non dovrebbe
+  /// succedere dopo il fix di startSession, ma per sicurezza) restituisce
+  /// il tempo pieno invece di un countdown già scaduto.
+  ///
+  /// Tiene conto delle pause (Break): il tempo trascorso durante un Break
+  /// non deve "consumare" il timer. Se la sessione è IN PAUSA in questo
+  /// momento, il calcolo si ferma a [pausedAt] invece di usare l'orario
+  /// attuale, così il countdown resta congelato finché il trainer non
+  /// riprende l'esame.
+  int totalExamRemainingSeconds() {
+    final totalSeconds = settings.totalExamMinutes * 60;
+    if (startedAt == null) return totalSeconds;
+    final effectiveNow = pausedAt ?? DateTime.now();
+    final rawElapsed = effectiveNow.difference(startedAt!).inSeconds;
+    final elapsed = rawElapsed - pausedSecondsTotal;
+    final remaining = totalSeconds - elapsed;
+    return remaining > 0 ? remaining : 0;
   }
 
   ExamSession copyWith({
@@ -75,6 +113,8 @@ class ExamSession {
     DateTime? startedAt,
     DateTime? finishedAt,
     bool? answerRevealed,
+    DateTime? pausedAt,
+    int? pausedSecondsTotal,
   }) {
     return ExamSession(
       id: id,
@@ -87,6 +127,8 @@ class ExamSession {
       questionIds: questionIds,
       settings: settings,
       answerRevealed: answerRevealed ?? this.answerRevealed,
+      pausedAt: pausedAt ?? this.pausedAt,
+      pausedSecondsTotal: pausedSecondsTotal ?? this.pausedSecondsTotal,
     );
   }
 }

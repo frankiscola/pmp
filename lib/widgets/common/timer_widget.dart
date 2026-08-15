@@ -12,11 +12,29 @@ class TimerWidget extends StatefulWidget {
   final VoidCallback onExpired;
   final bool compact;
 
+  /// Quando true, il countdown si ferma esattamente dove si trova (nessun
+  /// reset, nessun salto) e riparte da lì quando torna false. Usato per il
+  /// Break: il trainer mette in pausa e il tempo residuo resta congelato.
+  final bool paused;
+
+  /// Quando true, [totalSeconds] è trattato come "verità corrente dal
+  /// server" (non come una durata fissa impostata una volta sola): se un
+  /// nuovo valore arriva — es. via realtime, dopo che la sessione è stata
+  /// avviata — e si discosta troppo dal countdown locale, ci si riallinea
+  /// invece di restare bloccati sul valore calcolato al primo mount.
+  /// Usare SOLO per il timer "intero esame" (i cui secondi rimanenti sono
+  /// ricalcolati ogni volta a partire da `started_at`/pause sul server):
+  /// per il timer per-domanda [totalSeconds] è una durata fissa e va
+  /// lasciato false, altrimenti ogni rebuild lo resetterebbe al massimo.
+  final bool liveSync;
+
   const TimerWidget({
     super.key,
     required this.totalSeconds,
     required this.onExpired,
     this.compact = false,
+    this.paused = false,
+    this.liveSync = false,
   });
 
   @override
@@ -24,6 +42,12 @@ class TimerWidget extends StatefulWidget {
 }
 
 class _TimerWidgetState extends State<TimerWidget> {
+  /// Sotto questa soglia una differenza tra il valore locale e quello del
+  /// server è considerata normale drift (secondo in corso, piccola latenza
+  /// di rete) e NON provoca un riallineamento — altrimenti il countdown
+  /// "tremolerebbe" ad ogni rebuild.
+  static const int _resyncThresholdSeconds = 2;
+
   late int _remaining;
   Timer? _timer;
 
@@ -31,6 +55,11 @@ class _TimerWidgetState extends State<TimerWidget> {
   void initState() {
     super.initState();
     _remaining = widget.totalSeconds;
+    if (!widget.paused) _startTicking();
+  }
+
+  void _startTicking() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       setState(() {
@@ -41,6 +70,31 @@ class _TimerWidgetState extends State<TimerWidget> {
         widget.onExpired();
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant TimerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.paused && !oldWidget.paused) {
+      // Il trainer ha appena premuto "Pausa": ferma il countdown sul
+      // secondo esatto in cui si trova, senza toccare _remaining.
+      _timer?.cancel();
+    } else if (!widget.paused && oldWidget.paused) {
+      // Ripresa dopo il Break: riparte da dove si era fermato.
+      _startTicking();
+    }
+
+    // Riallineamento: se il valore in arrivo (autorevole, dal server) si
+    // discosta troppo da quello che stiamo mostrando in locale — tipico
+    // caso: al primo mount la sessione non aveva ancora tutti i dati
+    // sincronizzati via realtime — ci allineiamo invece di restare
+    // bloccati per sempre sul valore (sbagliato) del primo mount.
+    if (widget.liveSync && !widget.paused) {
+      final drift = (widget.totalSeconds - _remaining).abs();
+      if (drift > _resyncThresholdSeconds) {
+        setState(() => _remaining = widget.totalSeconds);
+      }
+    }
   }
 
   @override

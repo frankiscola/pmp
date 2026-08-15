@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../models/exam_session.dart';
@@ -19,7 +18,7 @@ class LobbyScreen extends StatelessWidget {
   const LobbyScreen({super.key, required this.session});
 
   Future<void> _start(BuildContext context) async {
-    await SupabaseService.instance.updateSessionStatus(session.id, AppConstants.sessionRunning);
+    await SupabaseService.instance.startSession(session.id);
     if (!context.mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => LiveDashboardScreen(session: session)),

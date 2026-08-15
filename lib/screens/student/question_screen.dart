@@ -9,6 +9,7 @@ import '../../models/question.dart';
 import '../../services/realtime_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/break_view.dart';
 import '../../widgets/common/timer_widget.dart';
 import '../../widgets/common/question_type_router.dart';
 import 'score_screen.dart';
@@ -103,6 +104,15 @@ class _QuestionScreenState extends State<QuestionScreen> {
           );
         }
 
+        // Il trainer ha premuto "Pausa": mostra il Break invece della
+        // domanda. Lo StreamBuilder resta comunque attivo, quindi appena
+        // il trainer riprende la sessione la domanda ricompare da sola,
+        // col timer per-domanda/totale ripreso esattamente da dove si era
+        // fermato (vedi TimerWidget.paused).
+        if (session.status == AppConstants.sessionPaused) {
+          return const BreakView();
+        }
+
         final question = _questions[index];
         final feedbackEnabled =
             session.settings.feedbackMode == AppConstants.feedbackImmediate;
@@ -127,6 +137,24 @@ class _QuestionScreenState extends State<QuestionScreen> {
                       totalSeconds: session.settings.timerSecondsPerQuestion,
                       onExpired: () => _submit(index),
                       compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
+                    ),
+                  ),
+                ),
+              if (session.settings.timerMode == AppConstants.timerTotal)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Center(
+                    child: TimerWidget(
+                      // Niente ValueKey legata all'indice domanda: il timer
+                      // è unico per l'intera sessione e non deve resettarsi
+                      // ad ogni cambio domanda.
+                      key: const ValueKey('total_exam_timer'),
+                      totalSeconds: session.totalExamRemainingSeconds(),
+                      onExpired: () {},
+                      compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
+                      liveSync: true,
                     ),
                   ),
                 ),

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/constants/app_constants.dart';
 import '../models/question.dart';
 import '../models/exam_session.dart';
 import '../models/exam_settings.dart';
@@ -175,6 +176,32 @@ class SupabaseService {
         .eq('id', sessionId);
   }
 
+  /// Avvia la sessione: imposta lo status su "running" E registra
+  /// `started_at`. Quest'ultimo è indispensabile per il timer in modalità
+  /// "intero esame" (timerMode == total), che calcola i secondi rimanenti
+  /// come `totalExamMinutes - (now - startedAt)`. Usare SEMPRE questo
+  /// metodo per avviare una sessione, non updateSessionStatus direttamente,
+  /// altrimenti startedAt resta null e quel timer non parte mai.
+  ///
+  /// IMPORTANTE: si usa `.toUtc()` prima di serializzare. La colonna è
+  /// `timestamptz` e Postgres, se riceve una stringa SENZA fuso orario
+  /// esplicito (quello che produce `DateTime.now().toIso8601String()` con
+  /// l'ora locale), la interpreta come se fosse già UTC — per un utente in
+  /// Italia in estate (UTC+2) questo sposta `started_at` di 2 ore nel
+  /// "futuro", facendo apparire il tempo trascorso negativo e quindi il
+  /// countdown molto più lungo del dovuto (es. 12 minuti configurati
+  /// mostrati come ~132). `.toUtc()` genera una stringa con il suffisso
+  /// "Z", inequivocabile, e risolve il problema alla radice.
+  Future<void> startSession(String sessionId) {
+    return _client
+        .from('exam_sessions')
+        .update({
+          'status': 'running',
+          'started_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', sessionId);
+  }
+
   Future<void> goToQuestionIndex(String sessionId, int index) {
     return _client
         .from('exam_sessions')
@@ -200,9 +227,42 @@ class SupabaseService {
         .from('exam_sessions')
         .update({
           'status': 'finished',
-          'finished_at': DateTime.now().toIso8601String(),
+          'finished_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', sessionId);
+  }
+
+  /// Mette la sessione in pausa (Break): gli studenti vedono la schermata
+  /// di break e il countdown dell'esame (se in modalità "intero esame") si
+  /// congela immediatamente, perché [pausedAt] diventa il nuovo riferimento
+  /// per il calcolo del tempo trascorso finché non si riprende.
+  Future<void> pauseSession(String sessionId) {
+    return _client
+        .from('exam_sessions')
+        .update({
+          'status': AppConstants.sessionPaused,
+          'paused_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', sessionId);
+  }
+
+  /// Riprende una sessione in pausa: somma la durata di questa pausa a
+  /// [pausedSecondsTotal] (così il tempo di Break non viene mai conteggiato
+  /// nel countdown) e torna allo stato "running".
+  Future<void> resumeSession(ExamSession session) async {
+    final pausedAt = session.pausedAt;
+    final thisPauseDuration = pausedAt != null
+        ? DateTime.now().toUtc().difference(pausedAt).inSeconds
+        : 0;
+    await _client
+        .from('exam_sessions')
+        .update({
+          'status': AppConstants.sessionRunning,
+          'paused_at': null,
+          'paused_seconds_total':
+              session.pausedSecondsTotal + thisPauseDuration,
+        })
+        .eq('id', session.id);
   }
 
   // ---------------------------------------------------------------------
@@ -212,7 +272,7 @@ class SupabaseService {
     final row = {
       'session_id': sessionId,
       'name': name,
-      'joined_at': DateTime.now().toIso8601String(),
+      'joined_at': DateTime.now().toUtc().toIso8601String(),
       'score': 0,
       'domain_scores': {'people': 0, 'process': 0, 'business_environment': 0},
     };
@@ -267,7 +327,7 @@ class SupabaseService {
             'given_answer': givenAnswer,
             'is_correct': correct,
             'time_spent_seconds': timeSpentSeconds,
-            'answered_at': DateTime.now().toIso8601String(),
+            'answered_at': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', existing['id']);
 
@@ -304,7 +364,7 @@ class SupabaseService {
       'given_answer': givenAnswer,
       'is_correct': correct,
       'time_spent_seconds': timeSpentSeconds,
-      'answered_at': DateTime.now().toIso8601String(),
+      'answered_at': DateTime.now().toUtc().toIso8601String(),
     });
 
     if (correct) {

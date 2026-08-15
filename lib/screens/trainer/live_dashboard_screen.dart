@@ -48,17 +48,6 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
     });
   }
 
-  /// Secondi rimanenti del timer totale. Se per qualche motivo l'orario di
-  /// inizio non è ancora disponibile, usa il tempo pieno invece di
-  /// nascondere il timer.
-  int _totalExamRemainingSeconds(ExamSession session) {
-    final totalSeconds = session.settings.totalExamMinutes * 60;
-    if (session.startedAt == null) return totalSeconds;
-    final elapsed = DateTime.now().difference(session.startedAt!).inSeconds;
-    final remaining = totalSeconds - elapsed;
-    return remaining > 0 ? remaining : 0;
-  }
-
   Future<void> _nextQuestion(int currentIndex) async {
     final nextIndex = currentIndex + 1;
     if (nextIndex >= _questions.length) {
@@ -111,6 +100,7 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                       totalSeconds: session.settings.timerSecondsPerQuestion,
                       onExpired: () {},
                       compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
                     ),
                   ),
                 ),
@@ -120,12 +110,39 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                   child: Center(
                     child: TimerWidget(
                       key: const ValueKey('trainer_total_exam_timer'),
-                      totalSeconds: _totalExamRemainingSeconds(session),
+                      totalSeconds: session.totalExamRemainingSeconds(),
                       onExpired: () {},
                       compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
+                      liveSync: true,
                     ),
                   ),
                 ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  tooltip: session.status == AppConstants.sessionPaused
+                      ? 'Riprendi esame'
+                      : 'Metti in pausa (Break)',
+                  icon: Icon(
+                    session.status == AppConstants.sessionPaused
+                        ? Icons.play_circle_outline
+                        : Icons.pause_circle_outline,
+                    color: session.status == AppConstants.sessionPaused
+                        ? AppColors.pmiGreen
+                        : AppColors.textSecondary,
+                  ),
+                  onPressed: () async {
+                    if (session.status == AppConstants.sessionPaused) {
+                      await SupabaseService.instance.resumeSession(session);
+                    } else {
+                      await SupabaseService.instance.pauseSession(
+                        widget.session.id,
+                      );
+                    }
+                  },
+                ),
+              ),
             ],
           ),
           body: Padding(
@@ -133,6 +150,41 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (session.status == AppConstants.sessionPaused)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.warningBg,
+                        borderRadius: BorderRadius.circular(
+                          AppTheme.radiusMedium,
+                        ),
+                        border: Border.all(color: AppColors.warning),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.pause_circle_filled,
+                            color: AppColors.warning,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Esame in pausa: gli studenti vedono la schermata di Break e il timer è congelato.',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.warning,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 AppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,22 +275,24 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                     icon: Icons.visibility,
                     variant: AppButtonVariant.secondary,
                     fullWidth: true,
-                    onPressed: () async {
-                      try {
-                        await SupabaseService.instance.revealAnswer(
-                          widget.session.id,
-                        );
-                      } catch (e) {
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Errore nel rivelare la risposta: $e',
-                            ),
-                          ),
-                        );
-                      }
-                    },
+                    onPressed: session.status == AppConstants.sessionPaused
+                        ? null
+                        : () async {
+                            try {
+                              await SupabaseService.instance.revealAnswer(
+                                widget.session.id,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Errore nel rivelare la risposta: $e',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
                   )
                 else
                   Container(
@@ -275,7 +329,9 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                       : 'Prossima domanda',
                   icon: Icons.arrow_forward,
                   fullWidth: true,
-                  onPressed: () => _nextQuestion(index),
+                  onPressed: session.status == AppConstants.sessionPaused
+                      ? null
+                      : () => _nextQuestion(index),
                 ),
               ],
             ),

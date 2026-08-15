@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -26,8 +27,44 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   String _feedbackMode = AppConstants.feedbackImmediate;
   String _timerMode = AppConstants.timerPerQuestion;
   int _timerSecondsPerQuestion = 90;
-  final int _totalExamMinutes = 240;
+  int _totalExamMinutes = AppConstants.fullExamMinutes; // default 240, come l'esame reale
+  late final TextEditingController _totalExamMinutesController =
+      TextEditingController(text: '$_totalExamMinutes');
+  final FocusNode _totalExamMinutesFocusNode = FocusNode();
   bool _creating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seleziona tutto il testo quando il campo riceve il focus: senza
+    // questo, cliccando sul campo il valore di default "240" resta lì e
+    // digitare un nuovo numero (es. "11") si concatena col vecchio invece
+    // di sostituirlo, producendo valori assurdi come "24011" o simili.
+    _totalExamMinutesFocusNode.addListener(() {
+      if (_totalExamMinutesFocusNode.hasFocus) {
+        _totalExamMinutesController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _totalExamMinutesController.text.length,
+        );
+      } else {
+        // Il campo ha perso il focus: se è rimasto vuoto o con un valore
+        // non valido (es. l'utente ha cancellato tutto senza scrivere
+        // nulla di nuovo), lo riallineiamo all'ultimo valore valido invece
+        // di lasciarlo visivamente vuoto.
+        final parsed = int.tryParse(_totalExamMinutesController.text);
+        if (parsed == null || parsed <= 0) {
+          _totalExamMinutesController.text = '$_totalExamMinutes';
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _totalExamMinutesController.dispose();
+    _totalExamMinutesFocusNode.dispose();
+    super.dispose();
+  }
 
   Future<void> _createSession() async {
     setState(() => _creating = true);
@@ -186,6 +223,36 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                       title: const Text('Totale per l\'intero esame'),
                       onChanged: (v) => setState(() => _timerMode = v!),
                     ),
+                    if (_timerMode == AppConstants.timerTotal)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _totalExamMinutesController,
+                                focusNode: _totalExamMinutesFocusNode,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: 'Minuti totali',
+                                  helperText:
+                                      'Default 240, come l\'esame PMP reale',
+                                  isDense: true,
+                                ),
+                                onChanged: (v) {
+                                  final parsed = int.tryParse(v);
+                                  if (parsed != null && parsed > 0) {
+                                    setState(() => _totalExamMinutes = parsed);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     RadioListTile<String>(
                       contentPadding: EdgeInsets.zero,
                       value: AppConstants.timerNone,
