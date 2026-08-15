@@ -6,6 +6,22 @@ import '../models/exam_session.dart';
 import '../models/exam_settings.dart';
 import '../models/participant.dart';
 import '../models/answer.dart';
+import '../models/group.dart';
+
+/// Esito della selezione di un set di domande. [reusedCount] è > 0 solo
+/// quando il pool di domande "nuove" (mai viste dal gruppo) non bastava a
+/// coprire il numero richiesto, e quindi alcune domande già proposte sono
+/// state ripescate per completare il set — il chiamante può avvisare il
+/// trainer in questo caso.
+class QuestionSelectionResult {
+  final List<Question> questions;
+  final int reusedCount;
+
+  const QuestionSelectionResult({
+    required this.questions,
+    this.reusedCount = 0,
+  });
+}
 
 /// Wrapper attorno al client Supabase: ogni chiamata al database passa
 /// da qui. Tenere tutta la logica di accesso dati in un unico posto rende
@@ -54,14 +70,63 @@ class SupabaseService {
   /// ha abbastanza domande disponibili per la sua quota, lo shortfall viene
   /// recuperato dagli altri domini — così il conteggio finale richiesto
   /// (es. 20) viene sempre rispettato, invece di restituire un set più corto.
-  Future<List<Question>> selectQuestionSet(int totalCount) async {
+  /// Seleziona un set di domande rispettando (quando possibile) i pesi ECO 2026
+  /// (People 33% · Process 41% · Business Environment 26%). Se un dominio non
+  /// ha abbastanza domande disponibili per la sua quota, lo shortfall viene
+  /// recuperato dagli altri domini — così il conteggio finale richiesto
+  /// (es. 20) viene sempre rispettato, invece di restituire un set più corto.
+  ///
+  /// Se [excludeIds] è fornito (tipicamente lo storico di un [Group]), quelle
+  /// domande vengono escluse dal pool prima della selezione pesata, per non
+  /// riproporre allo stesso gruppo domande già viste in giornate precedenti.
+  /// Solo se il pool "nuovo" non basta a coprire [totalCount], si ripesca
+  /// dalle domande escluse — e in quel caso [QuestionSelectionResult.reusedCount]
+  /// riporta quante sono state riproposte, così il chiamante può avvisare il
+  /// trainer.
+  Future<QuestionSelectionResult> selectQuestionSet(
+    int totalCount, {
+    Set<String>? excludeIds,
+  }) async {
     final all = await fetchQuestions();
+    final exclude = excludeIds ?? const <String>{};
+    final available = exclude.isEmpty
+        ? all
+        : all.where((q) => !exclude.contains(q.id)).toList();
+
+    final selected = _weightedPick(available, totalCount);
+    var reused = 0;
+
+    if (selected.length < totalCount && exclude.isNotEmpty) {
+      // Il gruppo ha già visto troppe domande: il pool "nuovo" non basta.
+      // Ripeschiamo dalle domande già usate pur di garantire il numero
+      // di domande richiesto dal trainer.
+      final chosenIds = selected.map((q) => q.id).toSet();
+      final fallbackPool = all
+          .where((q) => !chosenIds.contains(q.id))
+          .toList();
+      fallbackPool.shuffle(Random());
+      final needed = (totalCount - selected.length).clamp(
+        0,
+        fallbackPool.length,
+      );
+      final topUp = fallbackPool.take(needed).toList();
+      selected.addAll(topUp);
+      reused = topUp.length;
+    }
+
+    return QuestionSelectionResult(questions: selected, reusedCount: reused);
+  }
+
+  /// Estrae fino a [totalCount] domande da [pool] rispettando (quando
+  /// possibile) i pesi ECO 2026 per dominio. Può restituire meno di
+  /// [totalCount] domande se [pool] non ne contiene abbastanza.
+  List<Question> _weightedPick(List<Question> pool, int totalCount) {
     final byDomain = <String, List<Question>>{
       'people': [],
       'process': [],
       'business_environment': [],
     };
-    for (final q in all) {
+    for (final q in pool) {
       byDomain[q.domain]?.add(q);
     }
     final weights = {
@@ -77,9 +142,9 @@ class SupabaseService {
     // Prima passata: prova a prendere la quota pesata da ogni dominio
     weights.forEach((domain, weight) {
       final desired = (totalCount * weight).round();
-      final pool = List<Question>.from(byDomain[domain] ?? []);
-      pool.shuffle(random);
-      final taken = pool.take(desired).toList();
+      final domainPool = List<Question>.from(byDomain[domain] ?? []);
+      domainPool.shuffle(random);
+      final taken = domainPool.take(desired).toList();
       result.addAll(taken);
       usedIds.addAll(taken.map((q) => q.id));
       if (taken.length < desired) {
@@ -88,9 +153,9 @@ class SupabaseService {
     });
 
     // Seconda passata: colma lo shortfall pescando da TUTTE le domande
-    // rimanenti (di qualunque dominio), per raggiungere comunque totalCount.
+    // rimanenti del pool (di qualunque dominio).
     if (shortfall > 0) {
-      final remaining = all.where((q) => !usedIds.contains(q.id)).toList();
+      final remaining = pool.where((q) => !usedIds.contains(q.id)).toList();
       remaining.shuffle(random);
       final topUp = remaining.take(shortfall).toList();
       result.addAll(topUp);
@@ -98,8 +163,88 @@ class SupabaseService {
     }
 
     result.shuffle(random);
-    // Non superare mai il numero di domande realmente disponibili nel DB.
-    return result.take(totalCount.clamp(0, all.length)).toList();
+    return result.take(totalCount.clamp(0, pool.length)).toList();
+  }
+
+  // ---------------------------------------------------------------------
+  // GRUPPI — per non riproporre le stesse domande allo stesso gruppo di
+  // studenti su più giornate consecutive.
+  // ---------------------------------------------------------------------
+
+  /// Tutti i gruppi creati dal trainer attualmente autenticato, più
+  /// recenti prima.
+  Future<List<Group>> fetchGroups() async {
+    final trainerId = currentTrainer?.id;
+    if (trainerId == null) return [];
+    final data = await _client
+        .from('groups')
+        .select()
+        .eq('trainer_id', trainerId)
+        .order('created_at', ascending: false);
+    return (data as List)
+        .map((row) => Group.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Group> createGroup(String name) async {
+    final trainerId = currentTrainer?.id;
+    if (trainerId == null) {
+      throw StateError(
+        'Devi essere autenticato come trainer per creare un gruppo.',
+      );
+    }
+    final inserted = await _client
+        .from('groups')
+        .insert({
+          'trainer_id': trainerId,
+          'name': name.trim(),
+          'used_question_ids': <String>[],
+        })
+        .select()
+        .single();
+    return Group.fromJson(inserted);
+  }
+
+  /// Aggiunge gli id delle domande appena proposte allo storico del gruppo,
+  /// così non ricompariranno nelle prossime sessioni con lo stesso gruppo.
+  /// Va chiamato subito dopo aver creato una sessione per quel gruppo.
+  Future<void> markQuestionsUsed(
+    String groupId,
+    List<String> questionIds,
+  ) async {
+    if (questionIds.isEmpty) return;
+    final current = await _client
+        .from('groups')
+        .select('used_question_ids')
+        .eq('id', groupId)
+        .single();
+    final existing = <String>{
+      ...List<String>.from(current['used_question_ids'] as List? ?? []),
+      ...questionIds,
+    };
+    await _client
+        .from('groups')
+        .update({
+          'used_question_ids': existing.toList(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', groupId);
+  }
+
+  /// Svuota lo storico delle domande già proposte al gruppo: alla prossima
+  /// sessione tutte le domande torneranno disponibili per quel gruppo.
+  Future<void> resetGroupQuestions(String groupId) async {
+    await _client
+        .from('groups')
+        .update({
+          'used_question_ids': <String>[],
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', groupId);
+  }
+
+  Future<void> deleteGroup(String groupId) async {
+    await _client.from('groups').delete().eq('id', groupId);
   }
 
   // ---------------------------------------------------------------------

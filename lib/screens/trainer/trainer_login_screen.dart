@@ -3,7 +3,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
-import 'trainer_home_screen.dart';
+import 'group_selection_screen.dart';
 
 /// Login trainer via Supabase Auth (email + password). Solo il trainer
 /// autenticato può creare sessioni — protetto anche lato database
@@ -33,7 +33,7 @@ class _TrainerLoginScreenState extends State<TrainerLoginScreen> {
       );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const TrainerHomeScreen()),
+        MaterialPageRoute(builder: (_) => const GroupSelectionScreen()),
       );
     } catch (e) {
       setState(() => _error = 'Credenziali non valide. Riprova.');

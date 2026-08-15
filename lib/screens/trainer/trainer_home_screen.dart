@@ -5,17 +5,25 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/exam_settings.dart';
+import '../../models/group.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
+import 'group_selection_screen.dart';
 import 'lobby_screen.dart';
 
 /// Schermata del trainer per configurare e lanciare una nuova sessione:
 /// modalità (Training / Simulazione), numero di domande, feedback e timer.
 /// Tutti i parametri che l'utente voleva poter scegliere direttamente
 /// dall'app, senza dover toccare Supabase manualmente.
+///
+/// Se [group] è impostato, le domande già proposte a quel gruppo nelle
+/// sessioni precedenti vengono escluse dalla selezione, per non ripeterle
+/// su più giornate consecutive con la stessa classe.
 class TrainerHomeScreen extends StatefulWidget {
-  const TrainerHomeScreen({super.key});
+  final Group? group;
+
+  const TrainerHomeScreen({super.key, this.group});
 
   @override
   State<TrainerHomeScreen> createState() => _TrainerHomeScreenState();
@@ -33,9 +41,15 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   final FocusNode _totalExamMinutesFocusNode = FocusNode();
   bool _creating = false;
 
+  /// Copia locale del gruppo, aggiornata dopo ogni sessione creata così il
+  /// conteggio "domande già proposte" mostrato in questa schermata resta
+  /// corretto senza dover ricaricare da Supabase.
+  Group? _group;
+
   @override
   void initState() {
     super.initState();
+    _group = widget.group;
     // Seleziona tutto il testo quando il campo riceve il focus: senza
     // questo, cliccando sul campo il valore di default "240" resta lì e
     // digitare un nuovo numero (es. "11") si concatena col vecchio invece
@@ -69,8 +83,12 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   Future<void> _createSession() async {
     setState(() => _creating = true);
     try {
-      final questions = await SupabaseService.instance.selectQuestionSet(
+      final excludeIds = _group != null
+          ? _group!.usedQuestionIds.toSet()
+          : null;
+      final result = await SupabaseService.instance.selectQuestionSet(
         _questionCount,
+        excludeIds: excludeIds,
       );
       final settings = ExamSettings(
         feedbackMode: _feedbackMode,
@@ -81,10 +99,38 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
         questionCount: _questionCount,
       );
       final session = await SupabaseService.instance.createSession(
-        questions: questions,
+        questions: result.questions,
         settings: settings,
       );
+
+      if (_group != null) {
+        final questionIds = result.questions.map((q) => q.id).toList();
+        await SupabaseService.instance.markQuestionsUsed(
+          _group!.id,
+          questionIds,
+        );
+        _group = _group!.copyWith(
+          usedQuestionIds: {..._group!.usedQuestionIds, ...questionIds}
+              .toList(),
+        );
+      }
+
       if (!mounted) return;
+
+      if (result.reusedCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.warning,
+            content: Text(
+              '"${_group?.name}" ha già visto quasi tutte le domande '
+              'disponibili: ${result.reusedCount} sono state riproposte per '
+              'completare il set. Valuta un reset o amplia il database.',
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+
       Navigator.of(
         context,
       ).push(MaterialPageRoute(builder: (_) => LobbyScreen(session: session)));
@@ -96,6 +142,49 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
     } finally {
       if (mounted) setState(() => _creating = false);
     }
+  }
+
+  Future<void> _resetGroup() async {
+    final group = _group;
+    if (group == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset domande gruppo'),
+        content: Text(
+          'Vuoi svuotare lo storico delle ${group.usedQuestionIds.length} '
+          'domande già proposte a "${group.name}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await SupabaseService.instance.resetGroupQuestions(group.id);
+    if (!mounted) return;
+    setState(() => _group = group.copyWith(usedQuestionIds: const []));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Storico di "${group.name}" azzerato.')),
+    );
+  }
+
+  void _changeGroup() {
+    // GroupSelectionScreen naviga già direttamente a una nuova
+    // TrainerHomeScreen quando si sceglie/crea un gruppo: questa vecchia
+    // istanza resta semplicemente sotto nello stack di navigazione, e il
+    // trainer può tornare indietro con il pulsante "back".
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const GroupSelectionScreen()),
+    );
   }
 
   @override
@@ -117,6 +206,8 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              _buildGroupBanner(),
+              const SizedBox(height: 16),
               AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,6 +366,53 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildGroupBanner() {
+    final group = _group;
+    return AppCard(
+      backgroundColor: group != null
+          ? AppColors.pmiGreenLight
+          : AppColors.warningBg,
+      child: Row(
+        children: [
+          Icon(
+            group != null ? Icons.groups : Icons.group_off,
+            color: group != null ? AppColors.pmiGreen : AppColors.warning,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group != null ? group.name : 'Nessun gruppo selezionato',
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  group != null
+                      ? '${group.usedQuestionIds.length} domande già proposte a questo gruppo'
+                      : 'Le domande potrebbero ripetersi tra una sessione e l\'altra',
+                  style: AppTextStyles.caption,
+                ),
+              ],
+            ),
+          ),
+          if (group != null)
+            IconButton(
+              tooltip: 'Reset domande gruppo',
+              icon: const Icon(Icons.restart_alt),
+              onPressed: group.usedQuestionIds.isEmpty ? null : _resetGroup,
+            ),
+          TextButton(
+            onPressed: _changeGroup,
+            child: Text(group != null ? 'Cambia' : 'Scegli gruppo'),
+          ),
+        ],
       ),
     );
   }
