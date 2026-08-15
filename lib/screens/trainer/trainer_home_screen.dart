@@ -41,6 +41,18 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   final FocusNode _totalExamMinutesFocusNode = FocusNode();
   bool _creating = false;
 
+  /// Domini da includere nella sessione. Di default tutti e tre (esame
+  /// completo). Selezionandone solo alcuni, le domande vengono estratte
+  /// esclusivamente da quelli, con le proporzioni ECO 2026 rinormalizzate
+  /// sul sottoinsieme scelto — così una sessione "solo Business
+  /// Environment" prende domande solo da lì, mentre "People + Process"
+  /// rispetta il rapporto 33:41 tra i due invece di un 50:50 arbitrario.
+  Set<String> _selectedDomains = {
+    AppConstants.domainPeople,
+    AppConstants.domainProcess,
+    AppConstants.domainBusinessEnvironment,
+  };
+
   /// Copia locale del gruppo, aggiornata dopo ogni sessione creata così il
   /// conteggio "domande già proposte" mostrato in questa schermata resta
   /// corretto senza dover ricaricare da Supabase.
@@ -89,6 +101,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
       final result = await SupabaseService.instance.selectQuestionSet(
         _questionCount,
         excludeIds: excludeIds,
+        domains: _selectedDomains,
       );
       final settings = ExamSettings(
         feedbackMode: _feedbackMode,
@@ -251,6 +264,62 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                           onSelected: (_) => setState(() => _questionCount = n),
                         );
                       }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Domini', style: AppTextStyles.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      _selectedDomains.length == 3
+                          ? 'Tutti e tre i domini, nelle proporzioni ufficiali ECO 2026 (People 33% · Process 41% · Business Environment 26%).'
+                          : _selectedDomains.length == 1
+                          ? 'Solo domande di questo dominio.'
+                          : 'Solo i domini selezionati, nel loro rapporto ECO 2026 (es. People:Process ≈ 33:41).',
+                      style: AppTextStyles.caption,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children:
+                          [
+                            AppConstants.domainPeople,
+                            AppConstants.domainProcess,
+                            AppConstants.domainBusinessEnvironment,
+                          ].map((domain) {
+                            final selected = _selectedDomains.contains(
+                              domain,
+                            );
+                            return FilterChip(
+                              label: Text(
+                                AppConstants.domainLabels[domain] ?? domain,
+                              ),
+                              selected: selected,
+                              selectedColor: AppColors.domainColor(
+                                domain,
+                              ).withValues(alpha: 0.25),
+                              checkmarkColor: AppColors.domainColor(domain),
+                              onSelected: (nowSelected) {
+                                setState(() {
+                                  if (nowSelected) {
+                                    _selectedDomains.add(domain);
+                                  } else if (_selectedDomains.length > 1) {
+                                    // Non permettere di deselezionare
+                                    // l'ultimo dominio rimasto: una
+                                    // sessione deve avere sempre almeno un
+                                    // dominio da cui pescare le domande.
+                                    _selectedDomains.remove(domain);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
                     ),
                   ],
                 ),

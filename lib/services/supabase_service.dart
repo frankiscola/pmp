@@ -68,13 +68,8 @@ class SupabaseService {
   /// Seleziona un set di domande rispettando (quando possibile) i pesi ECO 2026
   /// (People 33% · Process 41% · Business Environment 26%). Se un dominio non
   /// ha abbastanza domande disponibili per la sua quota, lo shortfall viene
-  /// recuperato dagli altri domini — così il conteggio finale richiesto
-  /// (es. 20) viene sempre rispettato, invece di restituire un set più corto.
-  /// Seleziona un set di domande rispettando (quando possibile) i pesi ECO 2026
-  /// (People 33% · Process 41% · Business Environment 26%). Se un dominio non
-  /// ha abbastanza domande disponibili per la sua quota, lo shortfall viene
-  /// recuperato dagli altri domini — così il conteggio finale richiesto
-  /// (es. 20) viene sempre rispettato, invece di restituire un set più corto.
+  /// recuperato dagli altri domini SELEZIONATI — così il conteggio finale
+  /// richiesto (es. 20) viene rispettato quando possibile.
   ///
   /// Se [excludeIds] è fornito (tipicamente lo storico di un [Group]), quelle
   /// domande vengono escluse dal pool prima della selezione pesata, per non
@@ -83,25 +78,37 @@ class SupabaseService {
   /// dalle domande escluse — e in quel caso [QuestionSelectionResult.reusedCount]
   /// riporta quante sono state riproposte, così il chiamante può avvisare il
   /// trainer.
+  ///
+  /// Se [domains] è fornito (sottoinsieme di 'people'/'process'/
+  /// 'business_environment'), la selezione pesca SOLO da quei domini — sia
+  /// nella quota principale sia nell'eventuale ripesca — e i pesi ECO 2026
+  /// vengono rinormalizzati sul sottoinsieme scelto (es. solo People+Process
+  /// → 33/(33+41) e 41/(33+41), invece di un 50:50 arbitrario). Se null o
+  /// vuoto, si usano tutti e tre i domini (comportamento "esame completo").
   Future<QuestionSelectionResult> selectQuestionSet(
     int totalCount, {
     Set<String>? excludeIds,
+    Set<String>? domains,
   }) async {
     final all = await fetchQuestions();
+    final byDomainFilter = (domains == null || domains.isEmpty)
+        ? all
+        : all.where((q) => domains.contains(q.domain)).toList();
+
     final exclude = excludeIds ?? const <String>{};
     final available = exclude.isEmpty
-        ? all
-        : all.where((q) => !exclude.contains(q.id)).toList();
+        ? byDomainFilter
+        : byDomainFilter.where((q) => !exclude.contains(q.id)).toList();
 
-    final selected = _weightedPick(available, totalCount);
+    final selected = _weightedPick(available, totalCount, domains: domains);
     var reused = 0;
 
     if (selected.length < totalCount && exclude.isNotEmpty) {
       // Il gruppo ha già visto troppe domande: il pool "nuovo" non basta.
-      // Ripeschiamo dalle domande già usate pur di garantire il numero
-      // di domande richiesto dal trainer.
+      // Ripeschiamo dalle domande già usate (ma sempre solo nei domini
+      // selezionati) pur di garantire il numero di domande richiesto.
       final chosenIds = selected.map((q) => q.id).toSet();
-      final fallbackPool = all
+      final fallbackPool = byDomainFilter
           .where((q) => !chosenIds.contains(q.id))
           .toList();
       fallbackPool.shuffle(Random());
@@ -118,29 +125,50 @@ class SupabaseService {
   }
 
   /// Estrae fino a [totalCount] domande da [pool] rispettando (quando
-  /// possibile) i pesi ECO 2026 per dominio. Può restituire meno di
-  /// [totalCount] domande se [pool] non ne contiene abbastanza.
-  List<Question> _weightedPick(List<Question> pool, int totalCount) {
-    final byDomain = <String, List<Question>>{
-      'people': [],
-      'process': [],
-      'business_environment': [],
-    };
-    for (final q in pool) {
-      byDomain[q.domain]?.add(q);
-    }
-    final weights = {
+  /// possibile) i pesi ECO 2026 per dominio, rinormalizzati sui soli
+  /// [domains] se specificato (altrimenti tutti e tre). Può restituire
+  /// meno di [totalCount] domande se [pool] non ne contiene abbastanza.
+  List<Question> _weightedPick(
+    List<Question> pool,
+    int totalCount, {
+    Set<String>? domains,
+  }) {
+    const ecoWeights2026 = {
       'people': 0.33,
       'process': 0.41,
       'business_environment': 0.26,
     };
+    final selectedDomains = (domains == null || domains.isEmpty)
+        ? ecoWeights2026.keys.toSet()
+        : domains;
+
+    final byDomain = <String, List<Question>>{
+      for (final d in selectedDomains) d: <Question>[],
+    };
+    for (final q in pool) {
+      byDomain[q.domain]?.add(q);
+    }
+
+    // Rinormalizza i pesi ECO 2026 sui soli domini selezionati (sommano a 1
+    // sul sottoinsieme scelto, mantenendo le proporzioni relative tra loro).
+    final selectedWeightSum = selectedDomains.fold<double>(
+      0,
+      (sum, d) => sum + (ecoWeights2026[d] ?? 0),
+    );
+    final normalizedWeights = {
+      for (final d in selectedDomains)
+        d: selectedWeightSum > 0
+            ? (ecoWeights2026[d] ?? 0) / selectedWeightSum
+            : 1 / selectedDomains.length,
+    };
+
     final random = Random();
     final result = <Question>[];
     final usedIds = <String>{};
     var shortfall = 0;
 
     // Prima passata: prova a prendere la quota pesata da ogni dominio
-    weights.forEach((domain, weight) {
+    normalizedWeights.forEach((domain, weight) {
       final desired = (totalCount * weight).round();
       final domainPool = List<Question>.from(byDomain[domain] ?? []);
       domainPool.shuffle(random);
@@ -152,8 +180,9 @@ class SupabaseService {
       }
     });
 
-    // Seconda passata: colma lo shortfall pescando da TUTTE le domande
-    // rimanenti del pool (di qualunque dominio).
+    // Seconda passata: colma lo shortfall pescando dalle domande rimanenti
+    // ma SOLO all'interno dei domini selezionati (pool), mai da domini
+    // esclusi dal trainer.
     if (shortfall > 0) {
       final remaining = pool.where((q) => !usedIds.contains(q.id)).toList();
       remaining.shuffle(random);
