@@ -33,6 +33,12 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   String _examMode = 'training';
   int _questionCount = 20;
   String _feedbackMode = AppConstants.feedbackImmediate;
+
+  /// A chi mostrare la spiegazione dopo il reveal. Default 'both': utile
+  /// sia per lo studente che rivede subito perché ha sbagliato, sia per il
+  /// trainer che vuole commentarla a voce in aula senza dover leggere la
+  /// domanda a memoria.
+  String _explanationVisibility = AppConstants.explanationVisibilityBoth;
   String _timerMode = AppConstants.timerPerQuestion;
   int _timerSecondsPerQuestion = 90;
   int _totalExamMinutes = AppConstants.fullExamMinutes; // default 240, come l'esame reale
@@ -110,6 +116,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
         totalExamMinutes: _totalExamMinutes,
         examMode: _examMode,
         questionCount: _questionCount,
+        explanationVisibility: _explanationVisibility,
       );
       final session = await SupabaseService.instance.createSession(
         questions: result.questions,
@@ -275,14 +282,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                   children: [
                     const Text('Domini', style: AppTextStyles.titleMedium),
                     const SizedBox(height: 4),
-                    Text(
-                      _selectedDomains.length == 3
-                          ? 'Tutti e tre i domini, nelle proporzioni ufficiali ECO 2026 (People 33% · Process 41% · Business Environment 26%).'
-                          : _selectedDomains.length == 1
-                          ? 'Solo domande di questo dominio.'
-                          : 'Solo i domini selezionati, nel loro rapporto ECO 2026 (es. People:Process ≈ 33:41).',
-                      style: AppTextStyles.caption,
-                    ),
+                    Text(_domainsSubtitle(), style: AppTextStyles.caption),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
@@ -344,6 +344,49 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                       groupValue: _feedbackMode,
                       title: const Text('Solo a fine esame'),
                       onChanged: (v) => setState(() => _feedbackMode = v!),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Spiegazione',
+                      style: AppTextStyles.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'A chi mostrare la spiegazione quando il trainer '
+                      'rivela la risposta corretta.',
+                      style: AppTextStyles.caption,
+                    ),
+                    const SizedBox(height: 12),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: AppConstants.explanationVisibilityStudent,
+                      groupValue: _explanationVisibility,
+                      title: const Text('Solo studente'),
+                      onChanged: (v) =>
+                          setState(() => _explanationVisibility = v!),
+                    ),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: AppConstants.explanationVisibilityTrainer,
+                      groupValue: _explanationVisibility,
+                      title: const Text('Solo trainer'),
+                      onChanged: (v) =>
+                          setState(() => _explanationVisibility = v!),
+                    ),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: AppConstants.explanationVisibilityBoth,
+                      groupValue: _explanationVisibility,
+                      title: const Text('Entrambi'),
+                      onChanged: (v) =>
+                          setState(() => _explanationVisibility = v!),
                     ),
                   ],
                 ),
@@ -437,6 +480,42 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
         ),
       ),
     );
+  }
+
+  /// Sottotitolo della card "Domini": riflette SEMPRE la combinazione
+  /// effettivamente selezionata (mai un esempio fisso che potrebbe non
+  /// c'entrare nulla con quello che il trainer ha scelto in quel momento).
+  /// Con 2+ domini, mostra le percentuali ECO 2026 rinormalizzate sul
+  /// sottoinsieme scelto — le stesse usate davvero da selectQuestionSet.
+  String _domainsSubtitle() {
+    if (_selectedDomains.length == 3) {
+      final parts = [
+        AppConstants.domainPeople,
+        AppConstants.domainProcess,
+        AppConstants.domainBusinessEnvironment,
+      ].map((d) {
+        final pct = (AppConstants.domainWeights[d]! * 100).round();
+        return '${AppConstants.domainLabels[d]} $pct%';
+      }).join(' · ');
+      return 'Tutti e tre i domini, nelle proporzioni ufficiali ECO 2026 ($parts).';
+    }
+    if (_selectedDomains.length == 1) {
+      final domain = _selectedDomains.first;
+      return 'Solo domande di dominio ${AppConstants.domainLabels[domain]}.';
+    }
+    // 2 domini selezionati: rinormalizza i pesi ECO 2026 SOLO su questi due,
+    // esattamente come fa selectQuestionSet, e mostra il rapporto reale.
+    final weightSum = _selectedDomains.fold<double>(
+      0,
+      (sum, d) => sum + (AppConstants.domainWeights[d] ?? 0),
+    );
+    final parts = _selectedDomains.map((d) {
+      final pct = weightSum > 0
+          ? ((AppConstants.domainWeights[d] ?? 0) / weightSum * 100).round()
+          : (100 / _selectedDomains.length).round();
+      return '${AppConstants.domainLabels[d]} ≈ $pct%';
+    }).join(' · ');
+    return 'Solo i domini selezionati, nel loro rapporto ECO 2026 ($parts).';
   }
 
   Widget _buildGroupBanner() {

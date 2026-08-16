@@ -12,6 +12,12 @@ class ExamSettings {
   final String examMode; // training | simulation
   final int questionCount;
 
+  /// A chi viene mostrata la spiegazione dopo il reveal: 'student' (solo
+  /// studente, comportamento storico), 'trainer' (solo trainer, per non
+  /// distrarre gli studenti durante la sessione), 'both'. Default 'student'
+  /// per compatibilità con le sessioni create prima di questo campo.
+  final String explanationVisibility;
+
   const ExamSettings({
     this.feedbackMode = 'immediate',
     this.timerMode = 'per_question',
@@ -22,6 +28,7 @@ class ExamSettings {
     this.randomizeOptions = true,
     this.examMode = 'training',
     this.questionCount = 20,
+    this.explanationVisibility = 'student',
   });
 
   factory ExamSettings.fromJson(Map<String, dynamic> json) {
@@ -35,6 +42,8 @@ class ExamSettings {
       randomizeOptions: json['randomize_options'] as bool? ?? true,
       examMode: json['exam_mode'] as String? ?? 'training',
       questionCount: json['question_count'] as int? ?? 20,
+      explanationVisibility:
+          json['explanation_visibility'] as String? ?? 'student',
     );
   }
 
@@ -49,6 +58,7 @@ class ExamSettings {
       'randomize_options': randomizeOptions,
       'exam_mode': examMode,
       'question_count': questionCount,
+      'explanation_visibility': explanationVisibility,
     };
   }
 
@@ -62,6 +72,7 @@ class ExamSettings {
     bool? randomizeOptions,
     String? examMode,
     int? questionCount,
+    String? explanationVisibility,
   }) {
     return ExamSettings(
       feedbackMode: feedbackMode ?? this.feedbackMode,
@@ -73,6 +84,8 @@ class ExamSettings {
       randomizeOptions: randomizeOptions ?? this.randomizeOptions,
       examMode: examMode ?? this.examMode,
       questionCount: questionCount ?? this.questionCount,
+      explanationVisibility:
+          explanationVisibility ?? this.explanationVisibility,
     );
   }
 }

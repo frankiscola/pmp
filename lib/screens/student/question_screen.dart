@@ -121,6 +121,14 @@ class _QuestionScreenState extends State<QuestionScreen> {
         // la modalità prevede feedback immediato E il trainer ha premuto
         // "Rivela risposta" per questa domanda.
         final revealed = feedbackEnabled && session.answerRevealed;
+        // La spiegazione è un elemento separato dal "revealed" (che
+        // controlla anche i colori corretto/sbagliato sulle opzioni): può
+        // essere nascosta allo studente anche a reveal avvenuto, se il
+        // trainer ha scelto "Solo trainer" per questa sessione.
+        final showExplanationToStudent =
+            revealed &&
+            session.settings.explanationVisibility !=
+                AppConstants.explanationVisibilityTrainer;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -202,27 +210,29 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   ),
                 ],
                 if (revealed) ...[
-                  const SizedBox(height: 20),
-                  AppCard(
-                    backgroundColor: AppColors.infoBg,
-                    borderColor: AppColors.pmiBlue,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Spiegazione',
-                          style: AppTextStyles.label.copyWith(
-                            color: AppColors.pmiBlue,
+                  if (showExplanationToStudent) ...[
+                    const SizedBox(height: 20),
+                    AppCard(
+                      backgroundColor: AppColors.infoBg,
+                      borderColor: AppColors.pmiBlue,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Spiegazione',
+                            style: AppTextStyles.label.copyWith(
+                              color: AppColors.pmiBlue,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          question.explanation,
-                          style: AppTextStyles.bodyLarge,
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Text(
+                            question.explanation,
+                            style: AppTextStyles.bodyLarge,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 20),
                   Center(
                     child: Text(

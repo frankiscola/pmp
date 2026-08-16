@@ -207,6 +207,36 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                     ],
                   ),
                 ),
+                // Spiegazione lato trainer: visibile solo dopo il reveal e
+                // solo se il trainer, in fase di creazione sessione, ha
+                // scelto "Solo trainer" o "Entrambi" (non con "Solo
+                // studente", per non anticipargli nulla che vuole gestire
+                // lui a voce senza leggerla dallo schermo dello studente).
+                if (session.answerRevealed &&
+                    session.settings.explanationVisibility !=
+                        AppConstants.explanationVisibilityStudent) ...[
+                  const SizedBox(height: 12),
+                  AppCard(
+                    backgroundColor: AppColors.infoBg,
+                    borderColor: AppColors.pmiBlue,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Spiegazione',
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.pmiBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          question.explanation,
+                          style: AppTextStyles.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Expanded(
                   child: StreamBuilder<List<Answer>>(

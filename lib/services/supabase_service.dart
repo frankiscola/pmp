@@ -133,13 +133,8 @@ class SupabaseService {
     int totalCount, {
     Set<String>? domains,
   }) {
-    const ecoWeights2026 = {
-      'people': 0.33,
-      'process': 0.41,
-      'business_environment': 0.26,
-    };
     final selectedDomains = (domains == null || domains.isEmpty)
-        ? ecoWeights2026.keys.toSet()
+        ? AppConstants.domainWeights.keys.toSet()
         : domains;
 
     final byDomain = <String, List<Question>>{
@@ -153,12 +148,12 @@ class SupabaseService {
     // sul sottoinsieme scelto, mantenendo le proporzioni relative tra loro).
     final selectedWeightSum = selectedDomains.fold<double>(
       0,
-      (sum, d) => sum + (ecoWeights2026[d] ?? 0),
+      (sum, d) => sum + (AppConstants.domainWeights[d] ?? 0),
     );
     final normalizedWeights = {
       for (final d in selectedDomains)
         d: selectedWeightSum > 0
-            ? (ecoWeights2026[d] ?? 0) / selectedWeightSum
+            ? (AppConstants.domainWeights[d] ?? 0) / selectedWeightSum
             : 1 / selectedDomains.length,
     };
 

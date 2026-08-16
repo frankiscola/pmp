@@ -24,6 +24,15 @@ class AppConstants {
   };
 
   // ---------------------------------------------------------------------
+  // VISIBILITÀ SPIEGAZIONE — a chi viene mostrata la spiegazione della
+  // risposta corretta dopo il reveal: solo studente (comportamento
+  // storico), solo trainer, o entrambi.
+  // ---------------------------------------------------------------------
+  static const String explanationVisibilityStudent = 'student';
+  static const String explanationVisibilityTrainer = 'trainer';
+  static const String explanationVisibilityBoth = 'both';
+
+  // ---------------------------------------------------------------------
   // TIPI DI DOMANDA ECO 2026
   // ---------------------------------------------------------------------
   static const String typeSingleChoice = 'single_choice';
