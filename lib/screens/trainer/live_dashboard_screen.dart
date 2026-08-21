@@ -48,6 +48,91 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
     });
   }
 
+  /// Traduce `question.correctAnswers` in un testo leggibile per il
+  /// trainer, indipendentemente dal tipo di domanda e senza bisogno che
+  /// qualche studente abbia già risposto. Copre tutti e 7 i tipi ECO 2026.
+  String _correctAnswerSummary(Question question) {
+    final correct = question.correctAnswers;
+
+    switch (question.type) {
+      case AppConstants.typeSingleChoice:
+      case AppConstants.typeHotspot:
+      case AppConstants.typeGraphic:
+        final id = (correct as List).isNotEmpty ? correct.first : null;
+        final opts =
+            (question.options['options'] as List?) ??
+            (question.options['hotspots'] as List?);
+        final match = opts?.firstWhere(
+          (o) => o['id'] == id,
+          orElse: () => null,
+        );
+        final label = match?['text'] ?? match?['label'];
+        return label != null ? '$label' : '—';
+
+      case AppConstants.typeMultipleResponse:
+        final ids = Set<String>.from(correct as List);
+        final opts = (question.options['options'] as List?) ?? [];
+        final labels = opts
+            .where((o) => ids.contains(o['id']))
+            .map((o) => o['text'] as String)
+            .toList();
+        return labels.isEmpty ? '—' : labels.map((l) => '• $l').join('\n');
+
+      case AppConstants.typeMatching:
+        final map = Map<String, String>.from(correct as Map);
+        final left = (question.options['left'] as List?) ?? [];
+        final right = (question.options['right'] as List?) ?? [];
+        String textFor(List list, String id) {
+          final m = list.firstWhere(
+            (o) => o['id'] == id,
+            orElse: () => {'text': id},
+          );
+          return m['text'] as String;
+        }
+
+        return map.entries
+            .map(
+              (e) =>
+                  '${textFor(left, e.key)} → ${textFor(right, e.value)}',
+            )
+            .join('\n');
+
+      case AppConstants.typePulldown:
+        final map = Map<String, String>.from(correct as Map);
+        final blanks = (question.options['blanks'] as List?) ?? [];
+        return map.entries
+            .map((e) {
+              final idx = blanks.indexWhere((b) => b['id'] == e.key);
+              final label = idx >= 0 ? 'Spazio ${idx + 1}' : e.key;
+              return '$label → ${e.value}';
+            })
+            .join('\n');
+
+      case AppConstants.typeCaseScenario:
+        final subQuestions =
+            (question.options['subQuestions'] as List?) ?? [];
+        if (subQuestions.isEmpty) return '—';
+        return subQuestions
+            .asMap()
+            .entries
+            .map((entry) {
+              final i = entry.key;
+              try {
+                final sub = Map<String, dynamic>.from(entry.value as Map);
+                final subQuestion = Question.fromJson(sub);
+                return 'Sotto-domanda ${i + 1}: '
+                    '${_correctAnswerSummary(subQuestion)}';
+              } catch (_) {
+                return 'Sotto-domanda ${i + 1}: —';
+              }
+            })
+            .join('\n');
+
+      default:
+        return '—';
+    }
+  }
+
   Future<void> _nextQuestion(int currentIndex) async {
     final nextIndex = currentIndex + 1;
     if (nextIndex >= _questions.length) {
@@ -207,14 +292,50 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                     ],
                   ),
                 ),
-                // Spiegazione lato trainer: visibile solo dopo il reveal e
-                // solo se il trainer, in fase di creazione sessione, ha
-                // scelto "Solo trainer" o "Entrambi" (non con "Solo
-                // studente", per non anticipargli nulla che vuole gestire
-                // lui a voce senza leggerla dallo schermo dello studente).
-                if (session.answerRevealed &&
-                    session.settings.explanationVisibility !=
-                        AppConstants.explanationVisibilityStudent) ...[
+                // Risposta corretta + spiegazione lato trainer: visibili
+                // SUBITO al cambio domanda, senza aspettare il reveal e
+                // senza dipendere dal fatto che qualche studente abbia
+                // già risposto (il trainer conosce già tutto, non ha
+                // senso fargli aspettare come per gli studenti). Restano
+                // condizionate solo alla preferenza scelta in fase di
+                // creazione sessione: con "Solo studente" il trainer non
+                // le vede qui, per gestirle a voce guardando lo schermo
+                // dello studente se preferisce.
+                if (session.settings.explanationVisibility !=
+                    AppConstants.explanationVisibilityStudent) ...[
+                  const SizedBox(height: 12),
+                  AppCard(
+                    backgroundColor: AppColors.successBg,
+                    borderColor: AppColors.pmiGreen,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 16,
+                              color: AppColors.pmiGreen,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Risposta corretta',
+                              style: AppTextStyles.label.copyWith(
+                                color: AppColors.pmiGreen,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _correctAnswerSummary(question),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   AppCard(
                     backgroundColor: AppColors.infoBg,
@@ -288,7 +409,12 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                                       child: _AnswerDistribution(
                                         question: question,
                                         answers: answers,
-                                        revealed: session.answerRevealed,
+                                        // Il trainer vede sempre quale
+                                        // opzione è corretta, indipendente
+                                        // dal reveal verso gli studenti
+                                        // (quello resta gestito a parte
+                                        // dal pulsante "Rivela risposta").
+                                        revealed: true,
                                       ),
                                     ),
                             ),
