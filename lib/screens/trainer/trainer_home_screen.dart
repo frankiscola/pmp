@@ -251,79 +251,87 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Numero di domande',
-                      style: AppTextStyles.titleMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      children: [10, 20, 30, 60, 180].map((n) {
-                        final selected = _questionCount == n;
-                        return ChoiceChip(
-                          label: Text('$n'),
-                          selected: selected,
-                          onSelected: (_) => setState(() => _questionCount = n),
-                        );
-                      }).toList(),
-                    ),
-                  ],
+              // In modalità "Simulazione" numero di domande e domini sono
+              // fissi (180 domande, tutti e tre i domini in proporzioni ECO
+              // 2026) — nessuna scelta da fare, quindi niente card da
+              // mostrare. Tornando a "Training" ricompaiono con l'ultima
+              // selezione manuale fatta prima di passare a Simulazione.
+              if (_examMode != 'simulation') ...[
+                const SizedBox(height: 16),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Numero di domande',
+                        style: AppTextStyles.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        children: [10, 20, 30, 60, 180].map((n) {
+                          final selected = _questionCount == n;
+                          return ChoiceChip(
+                            label: Text('$n'),
+                            selected: selected,
+                            onSelected: (_) =>
+                                setState(() => _questionCount = n),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Domini', style: AppTextStyles.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(_domainsSubtitle(), style: AppTextStyles.caption),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children:
-                          [
-                            AppConstants.domainPeople,
-                            AppConstants.domainProcess,
-                            AppConstants.domainBusinessEnvironment,
-                          ].map((domain) {
-                            final selected = _selectedDomains.contains(
-                              domain,
-                            );
-                            return FilterChip(
-                              label: Text(
-                                AppConstants.domainLabels[domain] ?? domain,
-                              ),
-                              selected: selected,
-                              selectedColor: AppColors.domainColor(
+                const SizedBox(height: 16),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Domini', style: AppTextStyles.titleMedium),
+                      const SizedBox(height: 4),
+                      Text(_domainsSubtitle(), style: AppTextStyles.caption),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children:
+                            [
+                              AppConstants.domainPeople,
+                              AppConstants.domainProcess,
+                              AppConstants.domainBusinessEnvironment,
+                            ].map((domain) {
+                              final selected = _selectedDomains.contains(
                                 domain,
-                              ).withValues(alpha: 0.25),
-                              checkmarkColor: AppColors.domainColor(domain),
-                              onSelected: (nowSelected) {
-                                setState(() {
-                                  if (nowSelected) {
-                                    _selectedDomains.add(domain);
-                                  } else if (_selectedDomains.length > 1) {
-                                    // Non permettere di deselezionare
-                                    // l'ultimo dominio rimasto: una
-                                    // sessione deve avere sempre almeno un
-                                    // dominio da cui pescare le domande.
-                                    _selectedDomains.remove(domain);
-                                  }
-                                });
-                              },
-                            );
-                          }).toList(),
-                    ),
-                  ],
+                              );
+                              return FilterChip(
+                                label: Text(
+                                  AppConstants.domainLabels[domain] ?? domain,
+                                ),
+                                selected: selected,
+                                selectedColor: AppColors.domainColor(
+                                  domain,
+                                ).withValues(alpha: 0.25),
+                                checkmarkColor: AppColors.domainColor(domain),
+                                onSelected: (nowSelected) {
+                                  setState(() {
+                                    if (nowSelected) {
+                                      _selectedDomains.add(domain);
+                                    } else if (_selectedDomains.length > 1) {
+                                      // Non permettere di deselezionare
+                                      // l'ultimo dominio rimasto: una
+                                      // sessione deve avere sempre almeno un
+                                      // dominio da cui pescare le domande.
+                                      _selectedDomains.remove(domain);
+                                    }
+                                  });
+                                },
+                              );
+                            }).toList(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 16),
               AppCard(
                 child: Column(
@@ -565,10 +573,29 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
     );
   }
 
+  /// Cambia modalità esame. In "Simulazione" non ha senso lasciare al
+  /// trainer la scelta di quante domande o quali domini: dev'essere fedele
+  /// all'esame reale, quindi si forzano 180 domande su tutti e tre i
+  /// domini (proporzioni ECO 2026) — le card "Numero di domande" e
+  /// "Domini" spariscono di conseguenza dall'interfaccia.
+  void _setExamMode(String value) {
+    setState(() {
+      _examMode = value;
+      if (value == 'simulation') {
+        _questionCount = 180;
+        _selectedDomains = {
+          AppConstants.domainPeople,
+          AppConstants.domainProcess,
+          AppConstants.domainBusinessEnvironment,
+        };
+      }
+    });
+  }
+
   Widget _modeChip(String value, String title, String subtitle) {
     final selected = _examMode == value;
     return InkWell(
-      onTap: () => setState(() => _examMode = value),
+      onTap: () => _setExamMode(value),
       borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
       child: Container(
         padding: const EdgeInsets.all(14),

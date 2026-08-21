@@ -127,7 +127,13 @@ class _MatchingWidgetState extends State<MatchingWidget> {
   void _selectRight(String rightId) {
     if (widget.revealed || _activeLeftId == null) return;
     setState(() {
-      _matches.removeWhere((_, v) => v == rightId);
+      // NOTA: non rimuoviamo eventuali abbinamenti preesistenti verso
+      // questo stesso rightId. Alcune domande (es. teoria di Herzberg, con
+      // solo 2 categorie per 4 situazioni) richiedono che PIÙ termini di
+      // sinistra puntino alla STESSA categoria a destra — è un abbinamento
+      // "molti-a-uno" legittimo, non un errore. Rimuovere il match
+      // precedente qui impediva fisicamente di completare quel tipo di
+      // domanda (il pulsante "Conferma" restava bloccato per sempre).
       _matches[_activeLeftId!] = rightId;
       _activeLeftId = null;
     });
@@ -196,42 +202,67 @@ class _MatchingWidgetState extends State<MatchingWidget> {
         final text = item['text'] as String;
 
         final isActive = isLeft && _activeLeftId == id;
-        final matchedLeftId = isLeft
-            ? null
+
+        // Lato destro: quando più termini di sinistra puntano alla STESSA
+        // categoria (molti-a-uno), serve considerarli TUTTI — non solo il
+        // primo trovato — sia per lo stato "abbinato" sia, dopo il reveal,
+        // per decidere se colorare la categoria di verde o rosso.
+        final matchedLeftIds = isLeft
+            ? const <String>[]
             : _matches.entries
-                  .firstWhere(
-                    (e) => e.value == id,
-                    orElse: () => const MapEntry('', ''),
-                  )
-                  .key;
+                  .where((e) => e.value == id)
+                  .map((e) => e.key)
+                  .toList();
         final isMatched = isLeft
             ? _matches.containsKey(id)
-            : matchedLeftId!.isNotEmpty;
+            : matchedLeftIds.isNotEmpty;
 
         Color borderColor = AppColors.border;
         Color bgColor = AppColors.surface;
 
         if (widget.revealed) {
-          final myMatchRight = isLeft ? _matches[id] : null;
-          final isCorrectPair = isLeft
-              ? (myMatchRight != null && correctMap[id] == myMatchRight)
-              : (matchedLeftId!.isNotEmpty && correctMap[matchedLeftId] == id);
-          if (isMatched) {
-            borderColor = isCorrectPair ? AppColors.success : AppColors.error;
-            bgColor = isCorrectPair ? AppColors.successBg : AppColors.errorBg;
+          if (isLeft) {
+            final myMatchRight = _matches[id];
+            final isCorrectPair =
+                myMatchRight != null && correctMap[id] == myMatchRight;
+            if (isMatched) {
+              borderColor = isCorrectPair
+                  ? AppColors.success
+                  : AppColors.error;
+              bgColor = isCorrectPair
+                  ? AppColors.successBg
+                  : AppColors.errorBg;
+            }
+          } else if (matchedLeftIds.isNotEmpty) {
+            // Verde solo se OGNI termine abbinato a questa categoria è
+            // stato assegnato correttamente; basta un solo errore tra i
+            // vari termini condivisi per colorarla di rosso — altrimenti
+            // uno studente vedrebbe verde anche con un abbinamento sbagliato
+            // "nascosto" dietro uno corretto sulla stessa categoria.
+            final allCorrect = matchedLeftIds.every(
+              (lid) => correctMap[lid] == id,
+            );
+            borderColor = allCorrect ? AppColors.success : AppColors.error;
+            bgColor = allCorrect ? AppColors.successBg : AppColors.errorBg;
           }
         } else if (isActive) {
           borderColor = AppColors.pmiGreen;
           bgColor = AppColors.pmiGreenLight;
         } else if (isMatched) {
-          // Colore specifico della coppia (basato sul termine di sinistra)
-          // così sinistra e destra abbinate condividono lo stesso colore
-          // e si distinguono dalle altre coppie.
-          final pairLeftId = isLeft ? id : matchedLeftId!;
-          final pairColor =
-              _leftPairColor[pairLeftId] ?? AppColors.pmiBlue;
-          borderColor = pairColor;
-          bgColor = pairColor.withValues(alpha: 0.12);
+          if (isLeft || matchedLeftIds.length == 1) {
+            // Colore specifico della coppia (basato sul termine di
+            // sinistra) così sinistra e destra abbinate condividono lo
+            // stesso colore e si distinguono dalle altre coppie.
+            final pairLeftId = isLeft ? id : matchedLeftIds.first;
+            final pairColor = _leftPairColor[pairLeftId] ?? AppColors.pmiBlue;
+            borderColor = pairColor;
+            bgColor = pairColor.withValues(alpha: 0.12);
+          } else {
+            // Più di un termine condivide questa categoria: niente colore
+            // di coppia univoco possibile, usa un evidenziato neutro.
+            borderColor = AppColors.pmiBlue;
+            bgColor = AppColors.pmiBlue.withValues(alpha: 0.12);
+          }
         }
 
         return Padding(
