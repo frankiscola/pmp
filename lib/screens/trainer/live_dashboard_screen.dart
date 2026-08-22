@@ -54,6 +54,10 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
   String _correctAnswerSummary(Question question) {
     final correct = question.correctAnswers;
 
+    // A, B, C, D... in base alla posizione nell'elenco — utile al trainer
+    // per dire a voce "è la B" senza dover leggere tutto il testo.
+    String letterFor(int index) => String.fromCharCode(65 + index);
+
     switch (question.type) {
       case AppConstants.typeSingleChoice:
       case AppConstants.typeHotspot:
@@ -61,40 +65,38 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
         final id = (correct as List).isNotEmpty ? correct.first : null;
         final opts =
             (question.options['options'] as List?) ??
-            (question.options['hotspots'] as List?);
-        final match = opts?.firstWhere(
-          (o) => o['id'] == id,
-          orElse: () => null,
-        );
-        final label = match?['text'] ?? match?['label'];
-        return label != null ? '$label' : '—';
+            (question.options['hotspots'] as List?) ??
+            [];
+        final index = opts.indexWhere((o) => o['id'] == id);
+        if (index < 0) return '—';
+        final label = opts[index]['text'] ?? opts[index]['label'];
+        return '${letterFor(index)}) $label';
 
       case AppConstants.typeMultipleResponse:
         final ids = Set<String>.from(correct as List);
         final opts = (question.options['options'] as List?) ?? [];
-        final labels = opts
-            .where((o) => ids.contains(o['id']))
-            .map((o) => o['text'] as String)
-            .toList();
-        return labels.isEmpty ? '—' : labels.map((l) => '• $l').join('\n');
+        final lines = <String>[];
+        for (var i = 0; i < opts.length; i++) {
+          if (ids.contains(opts[i]['id'])) {
+            lines.add('• ${letterFor(i)}) ${opts[i]['text']}');
+          }
+        }
+        return lines.isEmpty ? '—' : lines.join('\n');
 
       case AppConstants.typeMatching:
         final map = Map<String, String>.from(correct as Map);
         final left = (question.options['left'] as List?) ?? [];
         final right = (question.options['right'] as List?) ?? [];
-        String textFor(List list, String id) {
-          final m = list.firstWhere(
-            (o) => o['id'] == id,
-            orElse: () => {'text': id},
-          );
-          return m['text'] as String;
-        }
-
         return map.entries
-            .map(
-              (e) =>
-                  '${textFor(left, e.key)} → ${textFor(right, e.value)}',
-            )
+            .map((e) {
+              final li = left.indexWhere((o) => o['id'] == e.key);
+              final ri = right.indexWhere((o) => o['id'] == e.value);
+              final leftText = li >= 0 ? left[li]['text'] : e.key;
+              final rightText = ri >= 0 ? right[ri]['text'] : e.value;
+              final leftLabel = li >= 0 ? '${li + 1}' : '?';
+              final rightLabel = ri >= 0 ? letterFor(ri) : '?';
+              return '$leftLabel) $leftText  →  $rightLabel) $rightText';
+            })
             .join('\n');
 
       case AppConstants.typePulldown:
@@ -102,9 +104,13 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
         final blanks = (question.options['blanks'] as List?) ?? [];
         return map.entries
             .map((e) {
-              final idx = blanks.indexWhere((b) => b['id'] == e.key);
-              final label = idx >= 0 ? 'Spazio ${idx + 1}' : e.key;
-              return '$label → ${e.value}';
+              final bi = blanks.indexWhere((b) => b['id'] == e.key);
+              final blankLabel = bi >= 0 ? 'Spazio ${bi + 1}' : e.key;
+              final choices =
+                  bi >= 0 ? (blanks[bi]['choices'] as List?) ?? [] : [];
+              final ci = choices.indexOf(e.value);
+              final choiceLabel = ci >= 0 ? '${letterFor(ci)}) ' : '';
+              return '$blankLabel → $choiceLabel${e.value}';
             })
             .join('\n');
 
