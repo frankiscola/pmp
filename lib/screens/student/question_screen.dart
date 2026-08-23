@@ -10,6 +10,7 @@ import '../../services/realtime_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/break_view.dart';
+import '../../widgets/common/leaderboard_list.dart';
 import '../../widgets/common/timer_widget.dart';
 import '../../widgets/common/question_type_router.dart';
 import 'score_screen.dart';
@@ -69,6 +70,70 @@ class _QuestionScreenState extends State<QuestionScreen> {
       question: _questions[index],
       givenAnswer: _currentAnswer,
       timeSpentSeconds: timeSpent,
+    );
+  }
+
+  void _openLeaderboard() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: AppColors.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    'Classifica live',
+                    style: AppTextStyles.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: StreamBuilder<List<Participant>>(
+                      stream: RealtimeService.instance.watchParticipants(
+                        widget.session.id,
+                      ),
+                      builder: (context, snap) {
+                        final participants = snap.data ?? [];
+                        return ListView(
+                          controller: scrollController,
+                          children: [
+                            LeaderboardList(
+                              participants: participants,
+                              highlightParticipantId: widget.participant.id,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -136,6 +201,12 @@ class _QuestionScreenState extends State<QuestionScreen> {
             title: Text('Domanda ${index + 1} / ${_questions.length}'),
             backgroundColor: AppColors.surface,
             actions: [
+              if (session.settings.showLeaderboard)
+                IconButton(
+                  tooltip: 'Classifica live',
+                  icon: const Icon(Icons.leaderboard),
+                  onPressed: _openLeaderboard,
+                ),
               if (session.settings.timerMode == AppConstants.timerPerQuestion)
                 Padding(
                   padding: const EdgeInsets.only(right: 16),

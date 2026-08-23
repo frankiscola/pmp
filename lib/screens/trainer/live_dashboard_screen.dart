@@ -5,11 +5,16 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/answer.dart';
 import '../../models/exam_session.dart';
+import '../../models/participant.dart';
 import '../../models/question.dart';
+import '../../services/analytics_service.dart';
 import '../../services/realtime_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/domain_stats_bars.dart';
+import '../../widgets/common/leaderboard_list.dart';
+import '../../widgets/common/most_missed_list.dart';
 import '../../widgets/common/timer_widget.dart';
 import 'results_screen.dart';
 
@@ -26,14 +31,25 @@ class LiveDashboardScreen extends StatefulWidget {
   State<LiveDashboardScreen> createState() => _LiveDashboardScreenState();
 }
 
-class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
+class _LiveDashboardScreenState extends State<LiveDashboardScreen>
+    with SingleTickerProviderStateMixin {
   List<Question> _questions = [];
   bool _loading = true;
+  late final TabController _tabController = TabController(
+    length: 3,
+    vsync: this,
+  );
 
   @override
   void initState() {
     super.initState();
     _loadQuestions();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadQuestions() async {
@@ -364,70 +380,159 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
+                TabBar(
+                  controller: _tabController,
+                  labelColor: AppColors.pmiGreen,
+                  unselectedLabelColor: AppColors.textSecondary,
+                  indicatorColor: AppColors.pmiGreen,
+                  tabs: const [
+                    Tab(text: 'Domanda corrente'),
+                    Tab(text: 'Andamento live'),
+                    Tab(text: 'Classifica'),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Expanded(
-                  child: StreamBuilder<List<Answer>>(
-                    stream: RealtimeService.instance.watchAnswers(
-                      widget.session.id,
-                    ),
-                    builder: (context, answerSnap) {
-                      final answers = (answerSnap.data ?? [])
-                          .where((a) => a.questionId == question.id)
-                          .toList();
-                      final correctCount = answers
-                          .where((a) => a.isCorrect)
-                          .length;
-                      final total = answers.length;
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // TAB 1 — statistiche sulla domanda corrente
+                      StreamBuilder<List<Answer>>(
+                        stream: RealtimeService.instance.watchAnswers(
+                          widget.session.id,
+                        ),
+                        builder: (context, answerSnap) {
+                          final answers = (answerSnap.data ?? [])
+                              .where((a) => a.questionId == question.id)
+                              .toList();
+                          final correctCount = answers
+                              .where((a) => a.isCorrect)
+                              .length;
+                          final total = answers.length;
 
-                      return Column(
-                        children: [
-                          Row(
+                          return Column(
                             children: [
-                              Expanded(
-                                child: _StatBox(
-                                  label: 'Hanno risposto',
-                                  value: '$total',
-                                  color: AppColors.pmiBlue,
-                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _StatBox(
+                                      label: 'Hanno risposto',
+                                      value: '$total',
+                                      color: AppColors.pmiBlue,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _StatBox(
+                                      label: 'Risposte corrette',
+                                      value: total == 0
+                                          ? '—'
+                                          : '$correctCount / $total',
+                                      color: AppColors.pmiGreen,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(height: 20),
                               Expanded(
-                                child: _StatBox(
-                                  label: 'Risposte corrette',
-                                  value: total == 0
-                                      ? '—'
-                                      : '$correctCount / $total',
-                                  color: AppColors.pmiGreen,
+                                child: AppCard(
+                                  child: answers.isEmpty
+                                      ? const Center(
+                                          child: Text(
+                                            'In attesa delle prime risposte...',
+                                          ),
+                                        )
+                                      : SingleChildScrollView(
+                                          child: _AnswerDistribution(
+                                            question: question,
+                                            answers: answers,
+                                            // Il trainer vede sempre quale
+                                            // opzione è corretta, indipendente
+                                            // dal reveal verso gli studenti
+                                            // (quello resta gestito a parte
+                                            // dal pulsante "Rivela risposta").
+                                            revealed: true,
+                                          ),
+                                        ),
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 20),
-                          Expanded(
-                            child: AppCard(
-                              child: answers.isEmpty
-                                  ? const Center(
-                                      child: Text(
-                                        'In attesa delle prime risposte...',
+                          );
+                        },
+                      ),
+                      // TAB 2 — andamento live su TUTTA la sessione finora
+                      StreamBuilder<List<Answer>>(
+                        stream: RealtimeService.instance.watchAnswers(
+                          widget.session.id,
+                        ),
+                        builder: (context, allAnswersSnap) {
+                          final allAnswers = allAnswersSnap.data ?? [];
+                          final domainStats = AnalyticsService.domainStats(
+                            _questions,
+                            allAnswers,
+                          );
+                          final missed = AnalyticsService.mostMissed(
+                            _questions,
+                            allAnswers,
+                            limit: 8,
+                          );
+                          return SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                AppCard(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Accuratezza per dominio (finora)',
+                                        style: AppTextStyles.titleMedium,
                                       ),
-                                    )
-                                  : SingleChildScrollView(
-                                      child: _AnswerDistribution(
-                                        question: question,
-                                        answers: answers,
-                                        // Il trainer vede sempre quale
-                                        // opzione è corretta, indipendente
-                                        // dal reveal verso gli studenti
-                                        // (quello resta gestito a parte
-                                        // dal pulsante "Rivela risposta").
-                                        revealed: true,
+                                      const SizedBox(height: 16),
+                                      DomainStatsBars(stats: domainStats),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                AppCard(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Domande più sbagliate (finora)',
+                                        style: AppTextStyles.titleMedium,
                                       ),
-                                    ),
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Tocca una riga per rivederla intera con spiegazione — utile per il debrief in aula.',
+                                        style: AppTextStyles.caption,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      MostMissedList(stats: missed),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      );
-                    },
+                          );
+                        },
+                      ),
+                      // TAB 3 — classifica live
+                      StreamBuilder<List<Participant>>(
+                        stream: RealtimeService.instance.watchParticipants(
+                          widget.session.id,
+                        ),
+                        builder: (context, partSnap) {
+                          final participants = partSnap.data ?? [];
+                          return SingleChildScrollView(
+                            child: LeaderboardList(participants: participants),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 20),

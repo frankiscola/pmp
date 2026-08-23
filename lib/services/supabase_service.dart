@@ -7,6 +7,7 @@ import '../models/exam_settings.dart';
 import '../models/participant.dart';
 import '../models/answer.dart';
 import '../models/group.dart';
+import 'analytics_service.dart';
 
 /// Esito della selezione di un set di domande. [reusedCount] è > 0 solo
 /// quando il pool di domande "nuove" (mai viste dal gruppo) non bastava a
@@ -85,10 +86,19 @@ class SupabaseService {
   /// vengono rinormalizzati sul sottoinsieme scelto (es. solo People+Process
   /// → 33/(33+41) e 41/(33+41), invece di un 50:50 arbitrario). Se null o
   /// vuoto, si usano tutti e tre i domini (comportamento "esame completo").
+  ///
+  /// Se [domainAccuracy] è fornito (accuratezza 0..1 per dominio, tipicamente
+  /// calcolata dallo storico delle sessioni precedenti di un gruppo con
+  /// [fetchGroupSessionTrend]), i pesi vengono ulteriormente spostati a
+  /// favore dei domini dove il gruppo è più debole — "selezione adattiva".
+  /// Si applica DOPO il filtro/rinormalizzazione per [domains]: se il
+  /// trainer ha scelto solo alcuni domini, l'adattività agisce comunque
+  /// solo all'interno di quel sottoinsieme.
   Future<QuestionSelectionResult> selectQuestionSet(
     int totalCount, {
     Set<String>? excludeIds,
     Set<String>? domains,
+    Map<String, double>? domainAccuracy,
   }) async {
     final all = await fetchQuestions();
     final byDomainFilter = (domains == null || domains.isEmpty)
@@ -100,7 +110,12 @@ class SupabaseService {
         ? byDomainFilter
         : byDomainFilter.where((q) => !exclude.contains(q.id)).toList();
 
-    final selected = _weightedPick(available, totalCount, domains: domains);
+    final selected = _weightedPick(
+      available,
+      totalCount,
+      domains: domains,
+      domainAccuracy: domainAccuracy,
+    );
     var reused = 0;
 
     if (selected.length < totalCount && exclude.isNotEmpty) {
@@ -126,12 +141,15 @@ class SupabaseService {
 
   /// Estrae fino a [totalCount] domande da [pool] rispettando (quando
   /// possibile) i pesi ECO 2026 per dominio, rinormalizzati sui soli
-  /// [domains] se specificato (altrimenti tutti e tre). Può restituire
-  /// meno di [totalCount] domande se [pool] non ne contiene abbastanza.
+  /// [domains] se specificato (altrimenti tutti e tre), poi eventualmente
+  /// spostati verso i domini più deboli se [domainAccuracy] è fornito. Può
+  /// restituire meno di [totalCount] domande se [pool] non ne contiene
+  /// abbastanza.
   List<Question> _weightedPick(
     List<Question> pool,
     int totalCount, {
     Set<String>? domains,
+    Map<String, double>? domainAccuracy,
   }) {
     final selectedDomains = (domains == null || domains.isEmpty)
         ? AppConstants.domainWeights.keys.toSet()
@@ -157,13 +175,20 @@ class SupabaseService {
             : 1 / selectedDomains.length,
     };
 
+    // Selezione adattiva: sposta i pesi normalizzati verso i domini dove il
+    // gruppo è più debole, SOLO tra quelli effettivamente selezionati.
+    final effectiveWeights = _applyAdaptiveBias(
+      normalizedWeights,
+      domainAccuracy,
+    );
+
     final random = Random();
     final result = <Question>[];
     final usedIds = <String>{};
     var shortfall = 0;
 
     // Prima passata: prova a prendere la quota pesata da ogni dominio
-    normalizedWeights.forEach((domain, weight) {
+    effectiveWeights.forEach((domain, weight) {
       final desired = (totalCount * weight).round();
       final domainPool = List<Question>.from(byDomain[domain] ?? []);
       domainPool.shuffle(random);
@@ -190,6 +215,35 @@ class SupabaseService {
     return result.take(totalCount.clamp(0, pool.length)).toList();
   }
 
+  /// Sposta [weights] (già normalizzati, sommano a 1) verso i domini dove
+  /// [accuracy] è più bassa rispetto a un obiettivo di padronanza del 75%.
+  /// Se [accuracy] è null/vuota, restituisce [weights] inalterati. Ogni
+  /// peso resta clampato tra il 15% e il 70% per non snaturare comunque la
+  /// copertura del sottoinsieme di domini scelto dal trainer.
+  Map<String, double> _applyAdaptiveBias(
+    Map<String, double> weights,
+    Map<String, double>? accuracy,
+  ) {
+    if (accuracy == null || accuracy.isEmpty) return weights;
+
+    const masteryTarget = 0.75;
+    const sensitivity = 0.6;
+    final adjusted = <String, double>{};
+    weights.forEach((domain, baseWeight) {
+      final acc = accuracy[domain];
+      if (acc == null) {
+        adjusted[domain] = baseWeight;
+        return;
+      }
+      // gap > 0 se il gruppo è sotto l'obiettivo (dominio debole) → peso su.
+      final gap = (masteryTarget - acc).clamp(-0.5, 0.5);
+      adjusted[domain] = (baseWeight + gap * sensitivity).clamp(0.15, 0.70);
+    });
+    final sum = adjusted.values.fold<double>(0, (a, b) => a + b);
+    if (sum == 0) return weights;
+    return adjusted.map((k, v) => MapEntry(k, v / sum));
+  }
+
   // ---------------------------------------------------------------------
   // GRUPPI — per non riproporre le stesse domande allo stesso gruppo di
   // studenti su più giornate consecutive.
@@ -208,6 +262,16 @@ class SupabaseService {
     return (data as List)
         .map((row) => Group.fromJson(row as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<Group?> fetchGroupById(String groupId) async {
+    final data = await _client
+        .from('groups')
+        .select()
+        .eq('id', groupId)
+        .maybeSingle();
+    if (data == null) return null;
+    return Group.fromJson(data);
   }
 
   Future<Group> createGroup(String name) async {
@@ -271,6 +335,48 @@ class SupabaseService {
     await _client.from('groups').delete().eq('id', groupId);
   }
 
+  /// Storico, sessione per sessione, dell'accuratezza per dominio di un
+  /// gruppo — una voce per ogni sessione CONCLUSA fatta con quel gruppo,
+  /// in ordine cronologico. Usato per:
+  /// - il grafico "andamento nel tempo" nella schermata risultati
+  /// - calcolare l'accuratezza cumulativa da passare a [selectQuestionSet]
+  ///   per la selezione adattiva delle domande (vedi
+  ///   [AnalyticsService.combineDomainStats])
+  Future<List<GroupSessionSnapshot>> fetchGroupSessionTrend(
+    String groupId,
+  ) async {
+    final sessionsData =
+        await _client
+                .from('exam_sessions')
+                .select('id, finished_at, started_at')
+                .eq('group_id', groupId)
+                .eq('status', 'finished')
+                .order('finished_at')
+            as List;
+    if (sessionsData.isEmpty) return [];
+
+    final questions = await fetchQuestions();
+    final snapshots = <GroupSessionSnapshot>[];
+    for (final row in sessionsData) {
+      final sessionId = row['id'] as String;
+      final finishedAtRaw = row['finished_at'] as String?;
+      final startedAtRaw = row['started_at'] as String?;
+      final date = finishedAtRaw != null
+          ? DateTime.parse(finishedAtRaw)
+          : (startedAtRaw != null
+                ? DateTime.parse(startedAtRaw)
+                : DateTime.now());
+      final answers = await fetchAllAnswers(sessionId);
+      snapshots.add(
+        GroupSessionSnapshot(
+          date: date,
+          domainStats: AnalyticsService.domainStats(questions, answers),
+        ),
+      );
+    }
+    return snapshots;
+  }
+
   // ---------------------------------------------------------------------
   // EXAM SETTINGS (preset "training" / "simulation")
   // ---------------------------------------------------------------------
@@ -290,6 +396,7 @@ class SupabaseService {
   Future<ExamSession> createSession({
     required List<Question> questions,
     required ExamSettings settings,
+    String? groupId,
   }) async {
     final trainerId = currentTrainer?.id;
     if (trainerId == null) {
@@ -305,6 +412,7 @@ class SupabaseService {
       'current_question_index': 0,
       'question_ids': questions.map((q) => q.id).toList(),
       'settings': settings.toJson(),
+      'group_id': groupId,
     };
     final inserted = await _client
         .from('exam_sessions')

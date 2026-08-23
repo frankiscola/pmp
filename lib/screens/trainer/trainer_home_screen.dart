@@ -6,6 +6,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/exam_settings.dart';
 import '../../models/group.dart';
+import '../../services/analytics_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
@@ -64,6 +65,13 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   /// corretto senza dover ricaricare da Supabase.
   Group? _group;
 
+  /// Se true (e c'è un gruppo selezionato con almeno una sessione conclusa
+  /// alle spalle), le domande vengono pescate più spesso dai domini dove il
+  /// gruppo ha storicamente performato peggio, invece dei pesi ECO fissi.
+  /// Agisce SOLO all'interno dei domini eventualmente scelti in
+  /// [_selectedDomains] — non li allarga né li restringe.
+  bool _adaptiveSelection = true;
+
   @override
   void initState() {
     super.initState();
@@ -104,10 +112,28 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
       final excludeIds = _group != null
           ? _group!.usedQuestionIds.toSet()
           : null;
+
+      Map<String, double>? domainAccuracy;
+      if (_group != null && _adaptiveSelection) {
+        final trend = await SupabaseService.instance.fetchGroupSessionTrend(
+          _group!.id,
+        );
+        if (trend.isNotEmpty) {
+          final combined = AnalyticsService.combineDomainStats(
+            trend.map((s) => s.domainStats),
+          );
+          domainAccuracy = {
+            for (final entry in combined.entries)
+              if (entry.value.total > 0) entry.key: entry.value.accuracy,
+          };
+        }
+      }
+
       final result = await SupabaseService.instance.selectQuestionSet(
         _questionCount,
         excludeIds: excludeIds,
         domains: _selectedDomains,
+        domainAccuracy: domainAccuracy,
       );
       final settings = ExamSettings(
         feedbackMode: _feedbackMode,
@@ -121,6 +147,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
       final session = await SupabaseService.instance.createSession(
         questions: result.questions,
         settings: settings,
+        groupId: _group?.id,
       );
 
       if (_group != null) {
@@ -136,6 +163,23 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
       }
 
       if (!mounted) return;
+
+      if (domainAccuracy != null && domainAccuracy.isNotEmpty) {
+        final weakest = domainAccuracy.entries.reduce(
+          (a, b) => a.value <= b.value ? a : b,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Selezione adattiva attiva: più domande su '
+              '${AppConstants.domainLabels[weakest.key] ?? weakest.key} '
+              '(dominio più debole finora per "${_group?.name}", '
+              '${(weakest.value * 100).round()}% di accuratezza).',
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
 
       if (result.reusedCount > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -532,42 +576,65 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
       backgroundColor: group != null
           ? AppColors.pmiGreenLight
           : AppColors.warningBg,
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            group != null ? Icons.groups : Icons.group_off,
-            color: group != null ? AppColors.pmiGreen : AppColors.warning,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  group != null ? group.name : 'Nessun gruppo selezionato',
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+          Row(
+            children: [
+              Icon(
+                group != null ? Icons.groups : Icons.group_off,
+                color: group != null ? AppColors.pmiGreen : AppColors.warning,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group != null ? group.name : 'Nessun gruppo selezionato',
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      group != null
+                          ? '${group.usedQuestionIds.length} domande già proposte a questo gruppo'
+                          : 'Le domande potrebbero ripetersi tra una sessione e l\'altra',
+                      style: AppTextStyles.caption,
+                    ),
+                  ],
                 ),
-                Text(
-                  group != null
-                      ? '${group.usedQuestionIds.length} domande già proposte a questo gruppo'
-                      : 'Le domande potrebbero ripetersi tra una sessione e l\'altra',
-                  style: AppTextStyles.caption,
+              ),
+              if (group != null)
+                IconButton(
+                  tooltip: 'Reset domande gruppo',
+                  icon: const Icon(Icons.restart_alt),
+                  onPressed: group.usedQuestionIds.isEmpty
+                      ? null
+                      : _resetGroup,
                 ),
-              ],
-            ),
+              TextButton(
+                onPressed: _changeGroup,
+                child: Text(group != null ? 'Cambia' : 'Scegli gruppo'),
+              ),
+            ],
           ),
-          if (group != null)
-            IconButton(
-              tooltip: 'Reset domande gruppo',
-              icon: const Icon(Icons.restart_alt),
-              onPressed: group.usedQuestionIds.isEmpty ? null : _resetGroup,
+          if (group != null) ...[
+            const Divider(height: 24),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _adaptiveSelection,
+              onChanged: (v) => setState(() => _adaptiveSelection = v),
+              title: const Text('Selezione adattiva per dominio'),
+              subtitle: const Text(
+                'Pesca più domande dai domini dove questo gruppo è '
+                'storicamente più debole (tra quelli selezionati sopra), '
+                'invece dei pesi ECO fissi. Si attiva dalla 2ª sessione in '
+                'poi.',
+                style: AppTextStyles.caption,
+              ),
             ),
-          TextButton(
-            onPressed: _changeGroup,
-            child: Text(group != null ? 'Cambia' : 'Scegli gruppo'),
-          ),
+          ],
         ],
       ),
     );

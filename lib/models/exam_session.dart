@@ -13,6 +13,12 @@ class ExamSession {
   final List<String> questionIds;
   final ExamSettings settings;
 
+  /// Id del [Group] con cui questa sessione è stata fatta (null se lanciata
+  /// senza gruppo). Permette di ricostruire, a sessione conclusa, in quale
+  /// gruppo/giorno la sessione rientra — usato per il grafico di andamento
+  /// del gruppo nel tempo e per la selezione adattiva delle domande.
+  final String? groupId;
+
   /// True quando il trainer ha premuto "Rivela risposta" per la domanda
   /// corrente — solo allora gli studenti vedono corretto/sbagliato e la
   /// spiegazione. Si resetta a false ad ogni cambio di domanda.
@@ -41,6 +47,7 @@ class ExamSession {
     this.finishedAt,
     this.pausedAt,
     this.pausedSecondsTotal = 0,
+    this.groupId,
   });
 
   factory ExamSession.fromJson(Map<String, dynamic> json) {
@@ -67,6 +74,7 @@ class ExamSession {
           ? DateTime.parse(json['paused_at'] as String)
           : null,
       pausedSecondsTotal: json['paused_seconds_total'] as int? ?? 0,
+      groupId: json['group_id'] as String?,
     );
   }
 
@@ -84,6 +92,7 @@ class ExamSession {
       'answer_revealed': answerRevealed,
       'paused_at': pausedAt?.toIso8601String(),
       'paused_seconds_total': pausedSecondsTotal,
+      'group_id': groupId,
     };
   }
 
@@ -129,6 +138,7 @@ class ExamSession {
       answerRevealed: answerRevealed ?? this.answerRevealed,
       pausedAt: pausedAt ?? this.pausedAt,
       pausedSecondsTotal: pausedSecondsTotal ?? this.pausedSecondsTotal,
+      groupId: groupId,
     );
   }
 }
