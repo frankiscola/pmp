@@ -40,6 +40,12 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   /// trainer che vuole commentarla a voce in aula senza dover leggere la
   /// domanda a memoria.
   String _explanationVisibility = AppConstants.explanationVisibilityBoth;
+
+  /// Se mostrare agli studenti (icona in alto durante l'esame) e nel
+  /// dashboard live del trainer la classifica in tempo reale. Default
+  /// spenta: in molti contesti d'aula la competizione visibile mette
+  /// pressione o distrae — il trainer la accende solo se la vuole.
+  bool _showLeaderboard = false;
   String _timerMode = AppConstants.timerPerQuestion;
   int _timerSecondsPerQuestion = 90;
   int _totalExamMinutes = AppConstants.fullExamMinutes; // default 240, come l'esame reale
@@ -143,6 +149,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
         examMode: _examMode,
         questionCount: _questionCount,
         explanationVisibility: _explanationVisibility,
+        showLeaderboard: _showLeaderboard,
       );
       final session = await SupabaseService.instance.createSession(
         questions: result.questions,
@@ -441,6 +448,24 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                           setState(() => _explanationVisibility = v!),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              AppCard(
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _showLeaderboard,
+                  onChanged: (v) => setState(() => _showLeaderboard = v),
+                  title: const Text(
+                    'Classifica live',
+                    style: AppTextStyles.titleMedium,
+                  ),
+                  subtitle: const Text(
+                    'Se attiva, gli studenti possono aprire la classifica '
+                    'in tempo reale durante l\'esame (icona in alto) e il '
+                    'trainer la vede nel dashboard live.',
+                    style: AppTextStyles.caption,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),

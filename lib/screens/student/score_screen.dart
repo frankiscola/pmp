@@ -127,7 +127,9 @@ class _ScoreScreenState extends State<ScoreScreen> {
                             color: AppColors.pmiGreen,
                           ),
                         ),
-                        if (rank != null && _allParticipants.isNotEmpty) ...[
+                        if (rank != null &&
+                            _allParticipants.isNotEmpty &&
+                            widget.session.settings.showLeaderboard) ...[
                           const SizedBox(height: 8),
                           Text(
                             'Sei arrivato ${rank}º su ${_allParticipants.length}',
@@ -178,8 +180,9 @@ class _ScoreScreenState extends State<ScoreScreen> {
                           ),
                         ],
 
-                        // --- Mini classifica ---
-                        if (_allParticipants.isNotEmpty) ...[
+                        // --- Mini classifica (solo se il trainer l'ha attivata) ---
+                        if (_allParticipants.isNotEmpty &&
+                            widget.session.settings.showLeaderboard) ...[
                           const SizedBox(height: 16),
                           AppCard(
                             backgroundColor: AppColors.surface,

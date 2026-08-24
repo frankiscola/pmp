@@ -37,6 +37,43 @@ class MatchingWidget extends StatefulWidget {
     this.revealed = false,
   });
 
+  /// Ordine "mescolato" della colonna destra per [question] — deterministico
+  /// (stesso seed = stesso risultato ogni volta, per la stessa domanda) ma
+  /// diverso dall'ordine grezzo salvato nel database.
+  ///
+  /// ESPOSTO COME STATICO e usato sia qui per il rendering interattivo sia
+  /// da `live_dashboard_screen.dart` per il riepilogo testuale "Risposta
+  /// corretta" mostrato al trainer: se le due logiche di shuffle
+  /// divergessero, le lettere A/B/C/D nel riepilogo non corrisponderebbero
+  /// più a quanto lo studente/trainer vede realmente a schermo — un'unica
+  /// fonte di verità evita che possa succedere di nuovo.
+  static List<Map<String, dynamic>> shuffledRight(Question question) {
+    final right = List<Map<String, dynamic>>.from(
+      question.options['right'] as List? ?? [],
+    );
+    final seed = question.id.hashCode;
+    final rnd = Random(seed);
+    final shuffled = List<Map<String, dynamic>>.from(right)..shuffle(rnd);
+
+    var attempts = 0;
+    while (_sameOrder(shuffled, right) && attempts < 5) {
+      shuffled.shuffle(rnd);
+      attempts++;
+    }
+    return shuffled;
+  }
+
+  static bool _sameOrder(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    if (a.length <= 1) return false; // niente da mescolare, non forzare
+    for (var i = 0; i < a.length; i++) {
+      if (a[i]['id'] != b[i]['id']) return false;
+    }
+    return true;
+  }
+
   @override
   State<MatchingWidget> createState() => _MatchingWidgetState();
 }
@@ -74,27 +111,8 @@ class _MatchingWidgetState extends State<MatchingWidget> {
     final left = List<Map<String, dynamic>>.from(
       widget.question.options['left'] as List? ?? [],
     );
-    final right = List<Map<String, dynamic>>.from(
-      widget.question.options['right'] as List? ?? [],
-    );
 
-    // Seed basato sull'id domanda: mescola in modo deterministico per
-    // quella domanda (uguale ad ogni rebuild) ma diverso da domanda a
-    // domanda, ed evita — salvo sfortuna — che l'ordine coincida con
-    // quello "naturale" 1A-2B-3C-4D.
-    final seed = widget.question.id.hashCode;
-    final rnd = Random(seed);
-    final shuffled = List<Map<String, dynamic>>.from(right)..shuffle(rnd);
-
-    // Se per caso lo shuffle ha prodotto lo stesso ordine originale
-    // (possibile con poche voci), rimescola con un seed diverso.
-    var attempts = 0;
-    while (_sameOrder(shuffled, right) && attempts < 5) {
-      shuffled.shuffle(rnd);
-      attempts++;
-    }
-
-    _rightShuffled = shuffled;
+    _rightShuffled = MatchingWidget.shuffledRight(widget.question);
 
     _leftPairColor
       ..clear()
@@ -106,17 +124,6 @@ class _MatchingWidgetState extends State<MatchingWidget> {
           ),
         ),
       );
-  }
-
-  bool _sameOrder(
-    List<Map<String, dynamic>> a,
-    List<Map<String, dynamic>> b,
-  ) {
-    if (a.length <= 1) return false; // niente da mescolare, non forzare
-    for (var i = 0; i < a.length; i++) {
-      if (a[i]['id'] != b[i]['id']) return false;
-    }
-    return true;
   }
 
   void _selectLeft(String leftId) {

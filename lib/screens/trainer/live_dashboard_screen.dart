@@ -16,6 +16,7 @@ import '../../widgets/common/domain_stats_bars.dart';
 import '../../widgets/common/leaderboard_list.dart';
 import '../../widgets/common/most_missed_list.dart';
 import '../../widgets/common/timer_widget.dart';
+import '../../widgets/question_types/matching_widget.dart';
 import 'results_screen.dart';
 
 /// Dashboard live del trainer: mostra la domanda corrente, quanti hanno
@@ -35,8 +36,13 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
     with SingleTickerProviderStateMixin {
   List<Question> _questions = [];
   bool _loading = true;
+
+  /// La tab "Classifica" compare solo se il trainer ha attivato la
+  /// leaderboard per questa sessione (impostazione fatta in fase di
+  /// creazione, di default spenta) — altrimenti restano solo le prime due.
+  bool get _showLeaderboardTab => widget.session.settings.showLeaderboard;
   late final TabController _tabController = TabController(
-    length: 3,
+    length: _showLeaderboardTab ? 3 : 2,
     vsync: this,
   );
 
@@ -102,7 +108,11 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
       case AppConstants.typeMatching:
         final map = Map<String, String>.from(correct as Map);
         final left = (question.options['left'] as List?) ?? [];
-        final right = (question.options['right'] as List?) ?? [];
+        // IMPORTANTE: usa lo stesso ordine "mescolato" che MatchingWidget
+        // mostra realmente a schermo (non l'ordine grezzo nel database),
+        // altrimenti le lettere A/B/C/D qui non corrispondono a quelle
+        // che lo studente/trainer vede nella colonna destra.
+        final right = MatchingWidget.shuffledRight(question);
         return map.entries
             .map((e) {
               final li = left.indexWhere((o) => o['id'] == e.key);
@@ -386,10 +396,10 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
                   labelColor: AppColors.pmiGreen,
                   unselectedLabelColor: AppColors.textSecondary,
                   indicatorColor: AppColors.pmiGreen,
-                  tabs: const [
-                    Tab(text: 'Domanda corrente'),
-                    Tab(text: 'Andamento live'),
-                    Tab(text: 'Classifica'),
+                  tabs: [
+                    const Tab(text: 'Domanda corrente'),
+                    const Tab(text: 'Andamento live'),
+                    if (_showLeaderboardTab) const Tab(text: 'Classifica'),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -520,18 +530,21 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
                           );
                         },
                       ),
-                      // TAB 3 — classifica live
-                      StreamBuilder<List<Participant>>(
-                        stream: RealtimeService.instance.watchParticipants(
-                          widget.session.id,
+                      // TAB 3 — classifica live (solo se attivata dal trainer)
+                      if (_showLeaderboardTab)
+                        StreamBuilder<List<Participant>>(
+                          stream: RealtimeService.instance.watchParticipants(
+                            widget.session.id,
+                          ),
+                          builder: (context, partSnap) {
+                            final participants = partSnap.data ?? [];
+                            return SingleChildScrollView(
+                              child: LeaderboardList(
+                                participants: participants,
+                              ),
+                            );
+                          },
                         ),
-                        builder: (context, partSnap) {
-                          final participants = partSnap.data ?? [];
-                          return SingleChildScrollView(
-                            child: LeaderboardList(participants: participants),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ),
