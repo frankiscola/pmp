@@ -183,6 +183,61 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
     );
   }
 
+  /// Termina la sessione ADESSO, a prescindere da quante domande siano
+  /// state effettivamente proposte — pensato per quando finisce il tempo
+  /// a lezione prima di arrivare all'ultima domanda pianificata.
+  ///
+  /// Usa esattamente lo stesso percorso della fine naturale
+  /// ([_nextQuestion] quando si supera l'ultima domanda): imposta lo status
+  /// della sessione su 'finished' e apre [ResultsScreen]. Poiché sia
+  /// [ResultsScreen] che il report personale dello studente calcolano
+  /// statistiche, classifica e andamento per dominio SOLO dalle risposte
+  /// realmente date (non dal numero di domande pianificate), tutto viene
+  /// mostrato esattamente come se la simulazione fosse arrivata in fondo
+  /// regolarmente — nessuna logica speciale necessaria altrove.
+  ///
+  /// Anche gli studenti ancora a metà di una domanda vengono spostati in
+  /// automatico al loro report personale, perché la schermata studente
+  /// ascolta in tempo reale lo status della sessione e reagisce non appena
+  /// diventa 'finished' (vedi `question_screen.dart`).
+  Future<void> _endSessionNow(int currentIndex) async {
+    final remaining = _questions.length - (currentIndex + 1);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Terminare la sessione ora?'),
+        content: Text(
+          remaining > 0
+              ? 'Mancano ancora $remaining domande a quelle pianificate. '
+                    'Terminando ora, gli studenti passeranno subito al loro '
+                    'report personale e vedrai statistiche e classifica '
+                    'finali basate sulle risposte date finora — esattamente '
+                    'come se la sessione fosse arrivata regolarmente in '
+                    'fondo.'
+              : 'Statistiche e classifica finali verranno mostrate subito.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Termina ora'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await SupabaseService.instance.finishSession(widget.session.id);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => ResultsScreen(session: widget.session)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -258,6 +313,18 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
                       );
                     }
                   },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  tooltip:
+                      'Termina sessione ora (es. finisce il tempo a lezione)',
+                  icon: const Icon(
+                    Icons.stop_circle_outlined,
+                    color: AppColors.error,
+                  ),
+                  onPressed: () => _endSessionNow(index),
                 ),
               ),
             ],
