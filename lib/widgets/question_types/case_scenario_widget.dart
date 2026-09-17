@@ -6,14 +6,13 @@ import '../../models/question.dart';
 import 'single_choice_widget.dart';
 import 'multiple_response_widget.dart';
 
-/// Case/Scenario Question — un testo di contesto seguito da una o più
-/// domande collegate. Vedi single_choice_widget.dart per [revealed]/[locked]
-/// (nota: su revisit, [locked] blocca l'interazione ma le sotto-domande non
-/// ripristinano ancora la selezione precedente — limite noto).
+/// Case/Scenario Question — un testo di contesto (spesso lungo) seguito
+/// da una o più domande collegate. Lo scenario resta visibile e
+/// "sticky" mentre lo studente scorre le sotto-domande, così non deve
+/// ricordarselo a memoria — esattamente come nel vero CBT PMI.
 class CaseScenarioWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
-  final bool locked;
   final ValueChanged<Map<String, dynamic>> onAnswered;
 
   const CaseScenarioWidget({
@@ -21,7 +20,6 @@ class CaseScenarioWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
-    this.locked = false,
   });
 
   @override
@@ -42,17 +40,6 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.locked && !widget.revealed)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: Row(
-              children: [
-                Icon(Icons.lock_outline, size: 14, color: AppColors.textTertiary),
-                SizedBox(width: 6),
-                Text('Domanda già risposta — non modificabile', style: AppTextStyles.caption),
-              ],
-            ),
-          ),
         Container(
           decoration: BoxDecoration(
             color: AppColors.surfaceAlt,
@@ -63,19 +50,29 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               InkWell(
-                onTap: () => setState(() => _scenarioExpanded = !_scenarioExpanded),
+                onTap: () =>
+                    setState(() => _scenarioExpanded = !_scenarioExpanded),
                 borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                 child: Padding(
                   padding: const EdgeInsets.all(14),
                   child: Row(
                     children: [
-                      const Icon(Icons.article_outlined, size: 20, color: AppColors.pmiBlue),
+                      const Icon(
+                        Icons.article_outlined,
+                        size: 20,
+                        color: AppColors.pmiBlue,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('Scenario', style: AppTextStyles.titleMedium),
+                        child: Text(
+                          'Scenario',
+                          style: AppTextStyles.titleMedium,
+                        ),
                       ),
                       Icon(
-                        _scenarioExpanded ? Icons.expand_less : Icons.expand_more,
+                        _scenarioExpanded
+                            ? Icons.expand_less
+                            : Icons.expand_more,
                         color: AppColors.textSecondary,
                       ),
                     ],
@@ -97,7 +94,10 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
             style: AppTextStyles.label,
           ),
           const SizedBox(height: 8),
-          Text(subQuestions[i]['question_text'] as String, style: AppTextStyles.question),
+          Text(
+            subQuestions[i]['question_text'] as String,
+            style: AppTextStyles.question,
+          ),
           const SizedBox(height: 12),
           _buildSubQuestion(subQuestions[i], i),
           const SizedBox(height: 24),
@@ -114,7 +114,6 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
       return MultipleResponseWidget(
         question: subQuestion,
         revealed: widget.revealed,
-        locked: widget.locked,
         onAnswered: (answer) {
           _subAnswers['sub_$index'] = answer;
           widget.onAnswered(_subAnswers);
@@ -124,7 +123,6 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
     return SingleChoiceWidget(
       question: subQuestion,
       revealed: widget.revealed,
-      locked: widget.locked,
       onAnswered: (answer) {
         _subAnswers['sub_$index'] = answer;
         widget.onAnswered(_subAnswers);

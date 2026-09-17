@@ -9,6 +9,8 @@ import '../../models/question.dart';
 import '../../services/realtime_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/break_view.dart';
+import '../../widgets/common/leaderboard_list.dart';
 import '../../widgets/common/timer_widget.dart';
 import '../../widgets/common/question_type_router.dart';
 import 'score_screen.dart';
@@ -16,15 +18,15 @@ import 'score_screen.dart';
 /// Schermata principale dello studente durante l'esame: mostra la
 /// domanda corrente (sincronizzata via realtime con il trainer),
 /// raccoglie la risposta e mostra il feedback se la modalità lo prevede.
-///
-/// Gestisce anche il caso in cui il trainer torni indietro a una domanda
-/// già risposta ("revisit"): quella domanda si BLOCCA — lo studente vede
-/// la risposta data in precedenza ma non può più modificarla.
 class QuestionScreen extends StatefulWidget {
   final ExamSession session;
   final Participant participant;
 
-  const QuestionScreen({super.key, required this.session, required this.participant});
+  const QuestionScreen({
+    super.key,
+    required this.session,
+    required this.participant,
+  });
 
   @override
   State<QuestionScreen> createState() => _QuestionScreenState();
@@ -33,15 +35,7 @@ class QuestionScreen extends StatefulWidget {
 class _QuestionScreenState extends State<QuestionScreen> {
   List<Question> _questions = [];
   bool _loading = true;
-
   final Set<int> _answeredIndices = {};
-  /// Cache locale delle risposte già date, per ripristinarle quando il
-  /// trainer torna su una domanda già risposta (revisit).
-  final Map<int, dynamic> _submittedAnswers = {};
-  /// Indice più avanti raggiunto finora in questa sessione: se l'indice
-  /// corrente scende sotto questo valore, siamo in un revisit.
-  int _maxIndexReached = -1;
-
   dynamic _currentAnswer;
   DateTime? _questionStartedAt;
 
@@ -67,7 +61,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
   Future<void> _submit(int index) async {
     if (_currentAnswer == null) return;
     _answeredIndices.add(index);
-    _submittedAnswers[index] = _currentAnswer;
     final timeSpent = _questionStartedAt != null
         ? DateTime.now().difference(_questionStartedAt!).inSeconds
         : 0;
@@ -77,6 +70,70 @@ class _QuestionScreenState extends State<QuestionScreen> {
       question: _questions[index],
       givenAnswer: _currentAnswer,
       timeSpentSeconds: timeSpent,
+    );
+  }
+
+  void _openLeaderboard() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: AppColors.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    'Classifica live',
+                    style: AppTextStyles.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: StreamBuilder<List<Participant>>(
+                      stream: RealtimeService.instance.watchParticipants(
+                        widget.session.id,
+                      ),
+                      builder: (context, snap) {
+                        final participants = snap.data ?? [];
+                        return ListView(
+                          controller: scrollController,
+                          children: [
+                            LeaderboardList(
+                              participants: participants,
+                              highlightParticipantId: widget.participant.id,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -96,7 +153,10 @@ class _QuestionScreenState extends State<QuestionScreen> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (_) => ScoreScreen(session: session, participant: widget.participant),
+                builder: (_) => ScoreScreen(
+                  session: session,
+                  participant: widget.participant,
+                ),
               ),
             );
           });
@@ -104,30 +164,36 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
         final index = session.currentQuestionIndex;
         if (index >= _questions.length) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
-        // Un "revisit" è quando il trainer torna a una domanda con indice
-        // più basso del punto più avanti già raggiunto: in quel caso la
-        // domanda va bloccata, non più editabile.
-        final isRevisit = index < _maxIndexReached;
-        if (index > _maxIndexReached) _maxIndexReached = index;
+        // Il trainer ha premuto "Pausa": mostra il Break invece della
+        // domanda. Lo StreamBuilder resta comunque attivo, quindi appena
+        // il trainer riprende la sessione la domanda ricompare da sola,
+        // col timer per-domanda/totale ripreso esattamente da dove si era
+        // fermato (vedi TimerWidget.paused).
+        if (session.status == AppConstants.sessionPaused) {
+          return const BreakView();
+        }
 
         final question = _questions[index];
-        final feedbackEnabled = session.settings.feedbackMode == AppConstants.feedbackImmediate;
+        final feedbackEnabled =
+            session.settings.feedbackMode == AppConstants.feedbackImmediate;
         final alreadyAnswered = _answeredIndices.contains(index);
         // Il reveal (colori corretto/sbagliato + spiegazione) appare solo se
         // la modalità prevede feedback immediato E il trainer ha premuto
         // "Rivela risposta" per questa domanda.
         final revealed = feedbackEnabled && session.answerRevealed;
-        final locked = isRevisit && alreadyAnswered;
-
-        // Su revisit, ripristina la risposta data in precedenza come
-        // "corrente", così se il trainer rivela in quel momento tutto torna
-        // coerente.
-        if (locked && _submittedAnswers.containsKey(index)) {
-          _currentAnswer = _submittedAnswers[index];
-        }
+        // La spiegazione è un elemento separato dal "revealed" (che
+        // controlla anche i colori corretto/sbagliato sulle opzioni): può
+        // essere nascosta allo studente anche a reveal avvenuto, se il
+        // trainer ha scelto "Solo trainer" per questa sessione.
+        final showExplanationToStudent =
+            revealed &&
+            session.settings.explanationVisibility !=
+                AppConstants.explanationVisibilityTrainer;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -135,7 +201,13 @@ class _QuestionScreenState extends State<QuestionScreen> {
             title: Text('Domanda ${index + 1} / ${_questions.length}'),
             backgroundColor: AppColors.surface,
             actions: [
-              if (session.settings.timerMode == AppConstants.timerPerQuestion && !locked)
+              if (session.settings.showLeaderboard)
+                IconButton(
+                  tooltip: 'Classifica live',
+                  icon: const Icon(Icons.leaderboard),
+                  onPressed: _openLeaderboard,
+                ),
+              if (session.settings.timerMode == AppConstants.timerPerQuestion)
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
                   child: Center(
@@ -144,6 +216,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                       totalSeconds: session.settings.timerSecondsPerQuestion,
                       onExpired: () => _submit(index),
                       compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
                     ),
                   ),
                 ),
@@ -152,10 +225,15 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   padding: const EdgeInsets.only(right: 16),
                   child: Center(
                     child: TimerWidget(
+                      // Niente ValueKey legata all'indice domanda: il timer
+                      // è unico per l'intera sessione e non deve resettarsi
+                      // ad ogni cambio domanda.
                       key: const ValueKey('total_exam_timer'),
-                      totalSeconds: _totalExamRemainingSeconds(session),
+                      totalSeconds: session.totalExamRemainingSeconds(),
                       onExpired: () {},
                       compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
+                      liveSync: true,
                     ),
                   ),
                 ),
@@ -167,28 +245,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (locked)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceAlt,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.history, size: 16, color: AppColors.textSecondary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Il trainer è tornato su una domanda precedente — la tua risposta resta quella già data.',
-                            style: AppTextStyles.caption,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 LinearProgressIndicator(
                   value: (index + 1) / _questions.length,
                   backgroundColor: AppColors.divider,
@@ -196,22 +252,23 @@ class _QuestionScreenState extends State<QuestionScreen> {
                 ),
                 const SizedBox(height: 20),
                 AppCard(
-                  child: Text(question.questionText, style: AppTextStyles.question),
+                  child: Text(
+                    question.questionText,
+                    style: AppTextStyles.question,
+                  ),
                 ),
                 const SizedBox(height: 20),
                 QuestionTypeRouter(
                   key: ValueKey('router_$index'),
                   question: question,
                   revealed: revealed,
-                  locked: locked,
-                  initialAnswer: _submittedAnswers[index],
                   onAnswered: (answer) {
                     _currentAnswer = answer;
                     _submit(index);
                     setState(() {});
                   },
                 ),
-                if (alreadyAnswered && !revealed && !locked) ...[
+                if (alreadyAnswered && !revealed) ...[
                   const SizedBox(height: 20),
                   Center(
                     child: Text(
@@ -224,19 +281,29 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   ),
                 ],
                 if (revealed) ...[
-                  const SizedBox(height: 20),
-                  AppCard(
-                    backgroundColor: AppColors.infoBg,
-                    borderColor: AppColors.pmiBlue,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Spiegazione', style: AppTextStyles.label.copyWith(color: AppColors.pmiBlue)),
-                        const SizedBox(height: 6),
-                        Text(question.explanation, style: AppTextStyles.bodyLarge),
-                      ],
+                  if (showExplanationToStudent) ...[
+                    const SizedBox(height: 20),
+                    AppCard(
+                      backgroundColor: AppColors.infoBg,
+                      borderColor: AppColors.pmiBlue,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Spiegazione',
+                            style: AppTextStyles.label.copyWith(
+                              color: AppColors.pmiBlue,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            question.explanation,
+                            style: AppTextStyles.bodyLarge,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 20),
                   Center(
                     child: Text(
@@ -252,13 +319,5 @@ class _QuestionScreenState extends State<QuestionScreen> {
         );
       },
     );
-  }
-
-  int _totalExamRemainingSeconds(ExamSession session) {
-    final totalSeconds = session.settings.totalExamMinutes * 60;
-    if (session.startedAt == null) return totalSeconds;
-    final elapsed = DateTime.now().difference(session.startedAt!).inSeconds;
-    final remaining = totalSeconds - elapsed;
-    return remaining > 0 ? remaining : 0;
   }
 }

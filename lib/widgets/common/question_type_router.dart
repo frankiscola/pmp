@@ -14,13 +14,6 @@ import '../question_types/point_and_click_widget.dart';
 class QuestionTypeRouter extends StatelessWidget {
   final Question question;
   final bool revealed;
-  /// True quando il trainer è tornato a una domanda già risposta in
-  /// precedenza (revisit): l'interazione è disabilitata indipendentemente
-  /// da [revealed], ma la risposta data resta visibile.
-  final bool locked;
-  /// La risposta già data in precedenza, da ripristinare come selezione
-  /// iniziale quando si torna su una domanda già risposta.
-  final dynamic initialAnswer;
   final ValueChanged<dynamic> onAnswered;
 
   const QuestionTypeRouter({
@@ -28,8 +21,6 @@ class QuestionTypeRouter extends StatelessWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
-    this.locked = false,
-    this.initialAnswer,
   });
 
   @override
@@ -39,47 +30,39 @@ class QuestionTypeRouter extends StatelessWidget {
         return MultipleResponseWidget(
           question: question,
           revealed: revealed,
-          locked: locked,
-          initialAnswer: initialAnswer as List<String>?,
           onAnswered: onAnswered,
         );
       case AppConstants.typeMatching:
         return MatchingWidget(
           question: question,
           revealed: revealed,
-          locked: locked,
-          initialAnswer: initialAnswer as Map<String, String>?,
           onAnswered: onAnswered,
         );
       case AppConstants.typePulldown:
         return PulldownWidget(
           question: question,
           revealed: revealed,
-          locked: locked,
-          initialAnswer: initialAnswer as Map<String, String>?,
           onAnswered: onAnswered,
         );
       case AppConstants.typeCaseScenario:
         return CaseScenarioWidget(
           question: question,
           revealed: revealed,
-          locked: locked,
           onAnswered: onAnswered,
         );
       case AppConstants.typeHotspot:
         return PointAndClickWidget(
           question: question,
           revealed: revealed,
-          locked: locked,
-          initialAnswer: initialAnswer as String?,
           onAnswered: onAnswered,
         );
       case AppConstants.typeGraphic:
+        // Graphic-Based: per ora usa Single Choice testuale, dato che le
+        // domande di questo tipo (es. lettura di un network diagram) sono
+        // già strutturate con "options" id/text, non con hotspot cliccabili.
         return SingleChoiceWidget(
           question: question,
           revealed: revealed,
-          locked: locked,
-          initialAnswer: initialAnswer as String?,
           onAnswered: onAnswered,
         );
       case AppConstants.typeSingleChoice:
@@ -87,8 +70,6 @@ class QuestionTypeRouter extends StatelessWidget {
         return SingleChoiceWidget(
           question: question,
           revealed: revealed,
-          locked: locked,
-          initialAnswer: initialAnswer as String?,
           onAnswered: onAnswered,
         );
     }

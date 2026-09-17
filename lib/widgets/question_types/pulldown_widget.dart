@@ -5,12 +5,11 @@ import '../../core/theme/app_theme.dart';
 import '../../models/question.dart';
 
 /// Pull-down List — testo con lacune da completare scegliendo da un menu
-/// a tendina. Vedi single_choice_widget.dart per [revealed]/[locked].
+/// a tendina. Dopo "Conferma risposta" le scelte si bloccano (blu neutro);
+/// i colori corretto/sbagliato compaiono solo quando [revealed] è true.
 class PulldownWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
-  final bool locked;
-  final Map<String, String>? initialAnswer;
   final ValueChanged<Map<String, String>> onAnswered;
 
   const PulldownWidget({
@@ -18,8 +17,6 @@ class PulldownWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
-    this.locked = false,
-    this.initialAnswer,
   });
 
   @override
@@ -27,15 +24,7 @@ class PulldownWidget extends StatefulWidget {
 }
 
 class _PulldownWidgetState extends State<PulldownWidget> {
-  late final Map<String, String> _selections;
-
-  @override
-  void initState() {
-    super.initState();
-    _selections = Map<String, String>.from(widget.initialAnswer ?? const {});
-  }
-
-  bool get _interactive => !widget.revealed && !widget.locked;
+  final Map<String, String> _selections = {};
 
   void _confirm() {
     widget.onAnswered(_selections);
@@ -53,22 +42,11 @@ class _PulldownWidgetState extends State<PulldownWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.locked && !widget.revealed)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                Icon(Icons.lock_outline, size: 14, color: AppColors.textTertiary),
-                SizedBox(width: 6),
-                Text('Domanda già risposta — non modificabile', style: AppTextStyles.caption),
-              ],
-            ),
-          ),
         for (final blank in blanks) ...[
           _buildDropdownRow(blank, correctMap),
           const SizedBox(height: 14),
         ],
-        if (_interactive) ...[
+        if (!widget.revealed) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
@@ -82,7 +60,10 @@ class _PulldownWidgetState extends State<PulldownWidget> {
     );
   }
 
-  Widget _buildDropdownRow(Map<String, dynamic> blank, Map<String, String> correctMap) {
+  Widget _buildDropdownRow(
+    Map<String, dynamic> blank,
+    Map<String, String> correctMap,
+  ) {
     final id = blank['id'] as String;
     final label = blank['label'] as String? ?? id;
     final choices = List<String>.from(blank['choices'] as List);
@@ -90,7 +71,9 @@ class _PulldownWidgetState extends State<PulldownWidget> {
 
     Color borderColor = AppColors.border;
     if (widget.revealed) {
-      borderColor = selected == correctMap[id] ? AppColors.success : AppColors.error;
+      borderColor = selected == correctMap[id]
+          ? AppColors.success
+          : AppColors.error;
     } else if (selected != null) {
       borderColor = AppColors.pmiBlue;
     }
@@ -112,7 +95,7 @@ class _PulldownWidgetState extends State<PulldownWidget> {
             items: choices
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),
-            onChanged: !_interactive
+            onChanged: widget.revealed
                 ? null
                 : (value) {
                     if (value == null) return;

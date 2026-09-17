@@ -5,21 +5,24 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/answer.dart';
 import '../../models/exam_session.dart';
+import '../../models/participant.dart';
 import '../../models/question.dart';
+import '../../services/analytics_service.dart';
 import '../../services/realtime_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/domain_stats_bars.dart';
+import '../../widgets/common/leaderboard_list.dart';
+import '../../widgets/common/most_missed_list.dart';
 import '../../widgets/common/timer_widget.dart';
+import '../../widgets/question_types/matching_widget.dart';
 import 'results_screen.dart';
 
 /// Dashboard live del trainer: mostra la domanda corrente, quanti hanno
-/// risposto, la distribuzione delle risposte per opzione, i controlli per
-/// rivelare la risposta e navigare avanti/indietro tra le domande.
-///
-/// Tornare indietro con "Domanda precedente" NON permette agli studenti di
-/// modificare la risposta già data — quella logica di blocco vive lato
-/// studente in question_screen.dart (concetto di "revisit").
+/// risposto, la DISTRIBUZIONE delle risposte per opzione (non solo un
+/// generico corretto/sbagliato), e i controlli per rivelare la risposta
+/// e avanzare alla prossima domanda.
 class LiveDashboardScreen extends StatefulWidget {
   final ExamSession session;
 
@@ -29,14 +32,30 @@ class LiveDashboardScreen extends StatefulWidget {
   State<LiveDashboardScreen> createState() => _LiveDashboardScreenState();
 }
 
-class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
+class _LiveDashboardScreenState extends State<LiveDashboardScreen>
+    with SingleTickerProviderStateMixin {
   List<Question> _questions = [];
   bool _loading = true;
+
+  /// La tab "Classifica" compare solo se il trainer ha attivato la
+  /// leaderboard per questa sessione (impostazione fatta in fase di
+  /// creazione, di default spenta) — altrimenti restano solo le prime due.
+  bool get _showLeaderboardTab => widget.session.settings.showLeaderboard;
+  late final TabController _tabController = TabController(
+    length: _showLeaderboardTab ? 3 : 2,
+    vsync: this,
+  );
 
   @override
   void initState() {
     super.initState();
     _loadQuestions();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadQuestions() async {
@@ -51,17 +70,99 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
     });
   }
 
-  int _totalExamRemainingSeconds(ExamSession session) {
-    final totalSeconds = session.settings.totalExamMinutes * 60;
-    if (session.startedAt == null) return totalSeconds;
-    final elapsed = DateTime.now().difference(session.startedAt!).inSeconds;
-    final remaining = totalSeconds - elapsed;
-    return remaining > 0 ? remaining : 0;
-  }
+  /// Traduce `question.correctAnswers` in un testo leggibile per il
+  /// trainer, indipendentemente dal tipo di domanda e senza bisogno che
+  /// qualche studente abbia già risposto. Copre tutti e 7 i tipi ECO 2026.
+  String _correctAnswerSummary(Question question) {
+    final correct = question.correctAnswers;
 
-  Future<void> _goToPreviousQuestion(int currentIndex) async {
-    if (currentIndex <= 0) return;
-    await SupabaseService.instance.goToQuestionIndex(widget.session.id, currentIndex - 1);
+    // A, B, C, D... in base alla posizione nell'elenco — utile al trainer
+    // per dire a voce "è la B" senza dover leggere tutto il testo.
+    String letterFor(int index) => String.fromCharCode(65 + index);
+
+    switch (question.type) {
+      case AppConstants.typeSingleChoice:
+      case AppConstants.typeHotspot:
+      case AppConstants.typeGraphic:
+        final id = (correct as List).isNotEmpty ? correct.first : null;
+        final opts =
+            (question.options['options'] as List?) ??
+            (question.options['hotspots'] as List?) ??
+            [];
+        final index = opts.indexWhere((o) => o['id'] == id);
+        if (index < 0) return '—';
+        final label = opts[index]['text'] ?? opts[index]['label'];
+        return '${letterFor(index)}) $label';
+
+      case AppConstants.typeMultipleResponse:
+        final ids = Set<String>.from(correct as List);
+        final opts = (question.options['options'] as List?) ?? [];
+        final lines = <String>[];
+        for (var i = 0; i < opts.length; i++) {
+          if (ids.contains(opts[i]['id'])) {
+            lines.add('• ${letterFor(i)}) ${opts[i]['text']}');
+          }
+        }
+        return lines.isEmpty ? '—' : lines.join('\n');
+
+      case AppConstants.typeMatching:
+        final map = Map<String, String>.from(correct as Map);
+        final left = (question.options['left'] as List?) ?? [];
+        // IMPORTANTE: usa lo stesso ordine "mescolato" che MatchingWidget
+        // mostra realmente a schermo (non l'ordine grezzo nel database),
+        // altrimenti le lettere A/B/C/D qui non corrispondono a quelle
+        // che lo studente/trainer vede nella colonna destra.
+        final right = MatchingWidget.shuffledRight(question);
+        return map.entries
+            .map((e) {
+              final li = left.indexWhere((o) => o['id'] == e.key);
+              final ri = right.indexWhere((o) => o['id'] == e.value);
+              final leftText = li >= 0 ? left[li]['text'] : e.key;
+              final rightText = ri >= 0 ? right[ri]['text'] : e.value;
+              final leftLabel = li >= 0 ? '${li + 1}' : '?';
+              final rightLabel = ri >= 0 ? letterFor(ri) : '?';
+              return '$leftLabel) $leftText  →  $rightLabel) $rightText';
+            })
+            .join('\n');
+
+      case AppConstants.typePulldown:
+        final map = Map<String, String>.from(correct as Map);
+        final blanks = (question.options['blanks'] as List?) ?? [];
+        return map.entries
+            .map((e) {
+              final bi = blanks.indexWhere((b) => b['id'] == e.key);
+              final blankLabel = bi >= 0 ? 'Spazio ${bi + 1}' : e.key;
+              final choices =
+                  bi >= 0 ? (blanks[bi]['choices'] as List?) ?? [] : [];
+              final ci = choices.indexOf(e.value);
+              final choiceLabel = ci >= 0 ? '${letterFor(ci)}) ' : '';
+              return '$blankLabel → $choiceLabel${e.value}';
+            })
+            .join('\n');
+
+      case AppConstants.typeCaseScenario:
+        final subQuestions =
+            (question.options['subQuestions'] as List?) ?? [];
+        if (subQuestions.isEmpty) return '—';
+        return subQuestions
+            .asMap()
+            .entries
+            .map((entry) {
+              final i = entry.key;
+              try {
+                final sub = Map<String, dynamic>.from(entry.value as Map);
+                final subQuestion = Question.fromJson(sub);
+                return 'Sotto-domanda ${i + 1}: '
+                    '${_correctAnswerSummary(subQuestion)}';
+              } catch (_) {
+                return 'Sotto-domanda ${i + 1}: —';
+              }
+            })
+            .join('\n');
+
+      default:
+        return '—';
+    }
   }
 
   Future<void> _nextQuestion(int currentIndex) async {
@@ -70,11 +171,71 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
       await SupabaseService.instance.finishSession(widget.session.id);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => ResultsScreen(session: widget.session)),
+        MaterialPageRoute(
+          builder: (_) => ResultsScreen(session: widget.session),
+        ),
       );
       return;
     }
-    await SupabaseService.instance.goToQuestionIndex(widget.session.id, nextIndex);
+    await SupabaseService.instance.goToQuestionIndex(
+      widget.session.id,
+      nextIndex,
+    );
+  }
+
+  /// Termina la sessione ADESSO, a prescindere da quante domande siano
+  /// state effettivamente proposte — pensato per quando finisce il tempo
+  /// a lezione prima di arrivare all'ultima domanda pianificata.
+  ///
+  /// Usa esattamente lo stesso percorso della fine naturale
+  /// ([_nextQuestion] quando si supera l'ultima domanda): imposta lo status
+  /// della sessione su 'finished' e apre [ResultsScreen]. Poiché sia
+  /// [ResultsScreen] che il report personale dello studente calcolano
+  /// statistiche, classifica e andamento per dominio SOLO dalle risposte
+  /// realmente date (non dal numero di domande pianificate), tutto viene
+  /// mostrato esattamente come se la simulazione fosse arrivata in fondo
+  /// regolarmente — nessuna logica speciale necessaria altrove.
+  ///
+  /// Anche gli studenti ancora a metà di una domanda vengono spostati in
+  /// automatico al loro report personale, perché la schermata studente
+  /// ascolta in tempo reale lo status della sessione e reagisce non appena
+  /// diventa 'finished' (vedi `question_screen.dart`).
+  Future<void> _endSessionNow(int currentIndex) async {
+    final remaining = _questions.length - (currentIndex + 1);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Terminare la sessione ora?'),
+        content: Text(
+          remaining > 0
+              ? 'Mancano ancora $remaining domande a quelle pianificate. '
+                    'Terminando ora, gli studenti passeranno subito al loro '
+                    'report personale e vedrai statistiche e classifica '
+                    'finali basate sulle risposte date finora — esattamente '
+                    'come se la sessione fosse arrivata regolarmente in '
+                    'fondo.'
+              : 'Statistiche e classifica finali verranno mostrate subito.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Termina ora'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await SupabaseService.instance.finishSession(widget.session.id);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => ResultsScreen(session: widget.session)),
+    );
   }
 
   @override
@@ -90,7 +251,9 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
         final session = sessionSnap.data ?? widget.session;
         final index = session.currentQuestionIndex;
         if (index >= _questions.length) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
         final question = _questions[index];
 
@@ -109,6 +272,7 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                       totalSeconds: session.settings.timerSecondsPerQuestion,
                       onExpired: () {},
                       compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
                     ),
                   ),
                 ),
@@ -118,12 +282,51 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                   child: Center(
                     child: TimerWidget(
                       key: const ValueKey('trainer_total_exam_timer'),
-                      totalSeconds: _totalExamRemainingSeconds(session),
+                      totalSeconds: session.totalExamRemainingSeconds(),
                       onExpired: () {},
                       compact: true,
+                      paused: session.status == AppConstants.sessionPaused,
+                      liveSync: true,
                     ),
                   ),
                 ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  tooltip: session.status == AppConstants.sessionPaused
+                      ? 'Riprendi esame'
+                      : 'Metti in pausa (Break)',
+                  icon: Icon(
+                    session.status == AppConstants.sessionPaused
+                        ? Icons.play_circle_outline
+                        : Icons.pause_circle_outline,
+                    color: session.status == AppConstants.sessionPaused
+                        ? AppColors.pmiGreen
+                        : AppColors.textSecondary,
+                  ),
+                  onPressed: () async {
+                    if (session.status == AppConstants.sessionPaused) {
+                      await SupabaseService.instance.resumeSession(session);
+                    } else {
+                      await SupabaseService.instance.pauseSession(
+                        widget.session.id,
+                      );
+                    }
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  tooltip:
+                      'Termina sessione ora (es. finisce il tempo a lezione)',
+                  icon: const Icon(
+                    Icons.stop_circle_outlined,
+                    color: AppColors.error,
+                  ),
+                  onPressed: () => _endSessionNow(index),
+                ),
+              ),
             ],
           ),
           body: Padding(
@@ -131,70 +334,285 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (session.status == AppConstants.sessionPaused)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.warningBg,
+                        borderRadius: BorderRadius.circular(
+                          AppTheme.radiusMedium,
+                        ),
+                        border: Border.all(color: AppColors.warning),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.pause_circle_filled,
+                            color: AppColors.warning,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Esame in pausa: gli studenti vedono la schermata di Break e il timer è congelato.',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.warning,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 AppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Chip(
                         label: Text(question.topic),
-                        backgroundColor: AppColors.domainColor(question.domain).withOpacity(0.12),
-                        labelStyle: TextStyle(color: AppColors.domainColor(question.domain)),
+                        backgroundColor: AppColors.domainColor(
+                          question.domain,
+                        ).withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: AppColors.domainColor(question.domain),
+                        ),
                         side: BorderSide.none,
                       ),
                       const SizedBox(height: 12),
-                      Text(question.questionText, style: AppTextStyles.question),
+                      Text(
+                        question.questionText,
+                        style: AppTextStyles.question,
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-                Expanded(
-                  child: StreamBuilder<List<Answer>>(
-                    stream: RealtimeService.instance.watchAnswers(widget.session.id),
-                    builder: (context, answerSnap) {
-                      final answers = (answerSnap.data ?? [])
-                          .where((a) => a.questionId == question.id)
-                          .toList();
-                      final correctCount = answers.where((a) => a.isCorrect).length;
-                      final total = answers.length;
-
-                      return Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _StatBox(
-                                  label: 'Hanno risposto',
-                                  value: '$total',
-                                  color: AppColors.pmiBlue,
-                                ),
+                // Risposta corretta + spiegazione lato trainer: visibili
+                // SUBITO al cambio domanda, senza aspettare il reveal e
+                // senza dipendere dal fatto che qualche studente abbia
+                // già risposto (il trainer conosce già tutto, non ha
+                // senso fargli aspettare come per gli studenti). Restano
+                // condizionate solo alla preferenza scelta in fase di
+                // creazione sessione: con "Solo studente" il trainer non
+                // le vede qui, per gestirle a voce guardando lo schermo
+                // dello studente se preferisce.
+                if (session.settings.explanationVisibility !=
+                    AppConstants.explanationVisibilityStudent) ...[
+                  const SizedBox(height: 12),
+                  AppCard(
+                    backgroundColor: AppColors.successBg,
+                    borderColor: AppColors.pmiGreen,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 16,
+                              color: AppColors.pmiGreen,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Risposta corretta',
+                              style: AppTextStyles.label.copyWith(
+                                color: AppColors.pmiGreen,
                               ),
-                              const SizedBox(width: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _correctAnswerSummary(question),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  AppCard(
+                    backgroundColor: AppColors.infoBg,
+                    borderColor: AppColors.pmiBlue,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Spiegazione',
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.pmiBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          question.explanation,
+                          style: AppTextStyles.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                TabBar(
+                  controller: _tabController,
+                  labelColor: AppColors.pmiGreen,
+                  unselectedLabelColor: AppColors.textSecondary,
+                  indicatorColor: AppColors.pmiGreen,
+                  tabs: [
+                    const Tab(text: 'Domanda corrente'),
+                    const Tab(text: 'Andamento live'),
+                    if (_showLeaderboardTab) const Tab(text: 'Classifica'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // TAB 1 — statistiche sulla domanda corrente
+                      StreamBuilder<List<Answer>>(
+                        stream: RealtimeService.instance.watchAnswers(
+                          widget.session.id,
+                        ),
+                        builder: (context, answerSnap) {
+                          final answers = (answerSnap.data ?? [])
+                              .where((a) => a.questionId == question.id)
+                              .toList();
+                          final correctCount = answers
+                              .where((a) => a.isCorrect)
+                              .length;
+                          final total = answers.length;
+
+                          return Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _StatBox(
+                                      label: 'Hanno risposto',
+                                      value: '$total',
+                                      color: AppColors.pmiBlue,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _StatBox(
+                                      label: 'Risposte corrette',
+                                      value: total == 0
+                                          ? '—'
+                                          : '$correctCount / $total',
+                                      color: AppColors.pmiGreen,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
                               Expanded(
-                                child: _StatBox(
-                                  label: 'Risposte corrette',
-                                  value: total == 0 ? '—' : '$correctCount / $total',
-                                  color: AppColors.pmiGreen,
+                                child: AppCard(
+                                  child: answers.isEmpty
+                                      ? const Center(
+                                          child: Text(
+                                            'In attesa delle prime risposte...',
+                                          ),
+                                        )
+                                      : SingleChildScrollView(
+                                          child: _AnswerDistribution(
+                                            question: question,
+                                            answers: answers,
+                                            // Il trainer vede sempre quale
+                                            // opzione è corretta, indipendente
+                                            // dal reveal verso gli studenti
+                                            // (quello resta gestito a parte
+                                            // dal pulsante "Rivela risposta").
+                                            revealed: true,
+                                          ),
+                                        ),
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 20),
-                          Expanded(
-                            child: AppCard(
-                              child: answers.isEmpty
-                                  ? const Center(child: Text('In attesa delle prime risposte...'))
-                                  : SingleChildScrollView(
-                                      child: _AnswerDistribution(
-                                        question: question,
-                                        answers: answers,
-                                        revealed: session.answerRevealed,
+                          );
+                        },
+                      ),
+                      // TAB 2 — andamento live su TUTTA la sessione finora
+                      StreamBuilder<List<Answer>>(
+                        stream: RealtimeService.instance.watchAnswers(
+                          widget.session.id,
+                        ),
+                        builder: (context, allAnswersSnap) {
+                          final allAnswers = allAnswersSnap.data ?? [];
+                          final domainStats = AnalyticsService.domainStats(
+                            _questions,
+                            allAnswers,
+                          );
+                          final missed = AnalyticsService.mostMissed(
+                            _questions,
+                            allAnswers,
+                            limit: 8,
+                          );
+                          return SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                AppCard(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Accuratezza per dominio (finora)',
+                                        style: AppTextStyles.titleMedium,
                                       ),
-                                    ),
+                                      const SizedBox(height: 16),
+                                      DomainStatsBars(stats: domainStats),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                AppCard(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Domande più sbagliate (finora)',
+                                        style: AppTextStyles.titleMedium,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Tocca una riga per rivederla intera con spiegazione — utile per il debrief in aula.',
+                                        style: AppTextStyles.caption,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      MostMissedList(stats: missed),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
+                          );
+                        },
+                      ),
+                      // TAB 3 — classifica live (solo se attivata dal trainer)
+                      if (_showLeaderboardTab)
+                        StreamBuilder<List<Participant>>(
+                          stream: RealtimeService.instance.watchParticipants(
+                            widget.session.id,
                           ),
-                        ],
-                      );
-                    },
+                          builder: (context, partSnap) {
+                            final participants = partSnap.data ?? [];
+                            return SingleChildScrollView(
+                              child: LeaderboardList(
+                                participants: participants,
+                              ),
+                            );
+                          },
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -204,60 +622,63 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                     icon: Icons.visibility,
                     variant: AppButtonVariant.secondary,
                     fullWidth: true,
-                    onPressed: () async {
-                      try {
-                        await SupabaseService.instance.revealAnswer(widget.session.id);
-                      } catch (e) {
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Errore nel rivelare la risposta: $e')),
-                        );
-                      }
-                    },
+                    onPressed: session.status == AppConstants.sessionPaused
+                        ? null
+                        : () async {
+                            try {
+                              await SupabaseService.instance.revealAnswer(
+                                widget.session.id,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Errore nel rivelare la risposta: $e',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
                   )
                 else
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
                       color: AppColors.successBg,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                      borderRadius: BorderRadius.circular(
+                        AppTheme.radiusMedium,
+                      ),
                       border: Border.all(color: AppColors.success),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.check_circle, color: AppColors.success, size: 18),
+                        const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                          size: 18,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'Risposta rivelata agli studenti',
-                          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.success),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
                         ),
                       ],
                     ),
                   ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton(
-                        label: 'Precedente',
-                        icon: Icons.arrow_back,
-                        variant: AppButtonVariant.outline,
-                        fullWidth: true,
-                        onPressed: index > 0 ? () => _goToPreviousQuestion(index) : null,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: AppButton(
-                        label: index + 1 >= _questions.length ? 'Termina esame' : 'Prossima domanda',
-                        icon: Icons.arrow_forward,
-                        fullWidth: true,
-                        onPressed: () => _nextQuestion(index),
-                      ),
-                    ),
-                  ],
+                AppButton(
+                  label: index + 1 >= _questions.length
+                      ? 'Termina esame'
+                      : 'Prossima domanda',
+                  icon: Icons.arrow_forward,
+                  fullWidth: true,
+                  onPressed: session.status == AppConstants.sessionPaused
+                      ? null
+                      : () => _nextQuestion(index),
                 ),
               ],
             ),
@@ -273,13 +694,17 @@ class _StatBox extends StatelessWidget {
   final String value;
   final Color color;
 
-  const _StatBox({required this.label, required this.value, required this.color});
+  const _StatBox({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      backgroundColor: color.withOpacity(0.08),
-      borderColor: color.withOpacity(0.3),
+      backgroundColor: color.withValues(alpha: 0.08),
+      borderColor: color.withValues(alpha: 0.3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -292,8 +717,11 @@ class _StatBox extends StatelessWidget {
   }
 }
 
-/// Distribuzione reale delle risposte per opzione — colorata solo dopo il
-/// "Rivela risposta".
+/// Sostituisce la vecchia barra generica corretto/sbagliato con la
+/// distribuzione REALE delle risposte per opzione — molto più utile per
+/// un trainer: mostra a colpo d'occhio dove il gruppo si è diviso.
+/// Prima del "Rivela risposta" le barre sono neutre (blu); dopo, l'opzione
+/// corretta diventa verde e le altre restano grigie.
 class _AnswerDistribution extends StatelessWidget {
   final Question question;
   final List<Answer> answers;
@@ -306,7 +734,8 @@ class _AnswerDistribution extends StatelessWidget {
   });
 
   List<Map<String, dynamic>> get _options {
-    final raw = question.options['options'] as List? ??
+    final raw =
+        question.options['options'] as List? ??
         (question.options['hotspots'] as List?)
             ?.map((h) => {'id': h['id'], 'text': h['label']})
             .toList();
@@ -319,6 +748,9 @@ class _AnswerDistribution extends StatelessWidget {
     return {};
   }
 
+  /// Estrae l'id (o gli id) scelti da una singola risposta, indipendentemente
+  /// dal fatto che sia una stringa singola (single choice) o una lista
+  /// (multiple response).
   List<String> _idsFrom(dynamic givenAnswer) {
     if (givenAnswer is String) return [givenAnswer];
     if (givenAnswer is List) return List<String>.from(givenAnswer);
@@ -329,6 +761,9 @@ class _AnswerDistribution extends StatelessWidget {
   Widget build(BuildContext context) {
     final options = _options;
 
+    // Per i tipi con struttura non riducibile a "opzioni con id/testo"
+    // (matching, pull-down, case scenario) mostriamo un messaggio semplice
+    // invece di una distribuzione fuorviante.
     if (options.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
@@ -359,11 +794,15 @@ class _AnswerDistribution extends StatelessWidget {
           final text = opt['text'] as String;
           final count = counts[id] ?? 0;
           final fraction = maxCount == 0 ? 0.0 : count / maxCount;
-          final percent = totalAnswers == 0 ? 0 : (count / totalAnswers * 100).round();
+          final percent = totalAnswers == 0
+              ? 0
+              : (count / totalAnswers * 100).round();
 
           Color barColor = AppColors.pmiBlue;
           if (revealed) {
-            barColor = _correctIds.contains(id) ? AppColors.pmiGreen : AppColors.textTertiary;
+            barColor = _correctIds.contains(id)
+                ? AppColors.pmiGreen
+                : AppColors.textTertiary;
           }
 
           return Padding(
@@ -387,7 +826,11 @@ class _AnswerDistribution extends StatelessWidget {
                     if (revealed && _correctIds.contains(id))
                       const Padding(
                         padding: EdgeInsets.only(left: 6),
-                        child: Icon(Icons.check_circle, size: 16, color: AppColors.success),
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 16,
+                          color: AppColors.success,
+                        ),
                       ),
                     const SizedBox(width: 8),
                     Text(
