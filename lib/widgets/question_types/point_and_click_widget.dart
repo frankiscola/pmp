@@ -4,14 +4,13 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/question.dart';
 
-/// Point & Click — vero diagramma con punti cliccabili a coordinate reali
-/// (x, y normalizzati 0-1 nel campo "hotspots" della domanda), non più
-/// semplici bottoni testuali. Lo studente tocca il punto del diagramma
-/// che ritiene corretto; il pallino selezionato resta blu neutro finché
-/// [revealed] non diventa true, poi si colora di verde/rosso.
+/// Point & Click — diagramma con punti cliccabili a coordinate reali.
+/// Vedi single_choice_widget.dart per la spiegazione di [revealed]/[locked].
 class PointAndClickWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
+  final bool locked;
+  final String? initialAnswer;
   final ValueChanged<String> onAnswered;
 
   const PointAndClickWidget({
@@ -19,6 +18,8 @@ class PointAndClickWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
+    this.initialAnswer,
   });
 
   @override
@@ -28,9 +29,17 @@ class PointAndClickWidget extends StatefulWidget {
 class _PointAndClickWidgetState extends State<PointAndClickWidget> {
   String? _selectedId;
 
+  @override
+  void initState() {
+    super.initState();
+    _selectedId = widget.initialAnswer;
+  }
+
+  bool get _interactive => !widget.revealed && !widget.locked;
+
   List<Map<String, dynamic>> get _hotspots => List<Map<String, dynamic>>.from(
-    widget.question.options['hotspots'] as List? ?? [],
-  );
+        widget.question.options['hotspots'] as List? ?? [],
+      );
 
   String? get _correctId {
     if (!widget.revealed) return null;
@@ -40,7 +49,7 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
   }
 
   void _handleTap(Offset localPosition, Size size) {
-    if (widget.revealed) return; // dopo la rivelazione non si cambia più
+    if (!_interactive) return;
     const hitRadius = 34.0;
     String? tappedId;
     double bestDistance = double.infinity;
@@ -61,12 +70,22 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final description =
-        widget.question.options['imageDescription'] as String? ?? '';
+    final description = widget.question.options['imageDescription'] as String? ?? '';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.locked && !widget.revealed)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Icon(Icons.lock_outline, size: 14, color: AppColors.textTertiary),
+                SizedBox(width: 6),
+                Text('Domanda già risposta — non modificabile', style: AppTextStyles.caption),
+              ],
+            ),
+          ),
         if (description.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -103,9 +122,11 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
         Text(
           widget.revealed
               ? 'Risultato'
-              : (_selectedId == null
-                    ? 'Tocca il punto corretto nel diagramma'
-                    : 'Selezionato — tocca un altro punto per cambiare'),
+              : (widget.locked
+                  ? ' '
+                  : (_selectedId == null
+                      ? 'Tocca il punto corretto nel diagramma'
+                      : 'Selezionato — tocca un altro punto per cambiare')),
           style: AppTextStyles.label,
           textAlign: TextAlign.center,
         ),
@@ -114,10 +135,6 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
   }
 }
 
-/// Disegna il diagramma: un punto centrale di riferimento, linee guida
-/// verso ogni hotspot (utili per domande "radiali" come le direzioni di
-/// influenza) e i pallini cliccabili con etichetta, colorati in base allo
-/// stato (neutro / selezionato / corretto / sbagliato).
 class _HotspotPainter extends CustomPainter {
   final List<Map<String, dynamic>> hotspots;
   final String? selectedId;
@@ -199,10 +216,7 @@ class _HotspotPainter extends CustomPainter {
           ? point.dy - _radius - textPainter.height - 4
           : point.dy + _radius + 4;
       final labelOffset = Offset(
-        (point.dx - textPainter.width / 2).clamp(
-          0,
-          size.width - textPainter.width,
-        ),
+        (point.dx - textPainter.width / 2).clamp(0, size.width - textPainter.width),
         labelY.clamp(0, size.height - textPainter.height),
       );
       textPainter.paint(canvas, labelOffset);
@@ -211,11 +225,7 @@ class _HotspotPainter extends CustomPainter {
         final checkPainter = TextPainter(
           text: const TextSpan(
             text: '✓',
-            style: TextStyle(
-              color: AppColors.success,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: AppColors.success, fontSize: 20, fontWeight: FontWeight.bold),
           ),
           textDirection: TextDirection.ltr,
         )..layout();
