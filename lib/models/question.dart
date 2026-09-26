@@ -108,6 +108,40 @@ class Question {
       final correct = (correctAnswers as List).first;
       return givenAnswer == correct;
     }
+    if (type == 'case_scenario') {
+      // Tutto-o-niente: corretta solo se OGNI sotto-domanda è corretta.
+      // Coerente con l'architettura attuale del punteggio (+1/-1 per
+      // domanda, non frazionario) — un punteggio parziale per sotto-domanda
+      // richiederebbe di ristrutturare participant.domainScores e la
+      // classifica, non solo questo metodo.
+      final subQuestions = List<Map<String, dynamic>>.from(
+        options['subQuestions'] as List? ?? [],
+      );
+      if (subQuestions.isEmpty) return false;
+      final givenMap = Map<String, dynamic>.from(
+        givenAnswer as Map? ?? const {},
+      );
+      for (var i = 0; i < subQuestions.length; i++) {
+        final sub = subQuestions[i];
+        final subType = sub['type'] as String? ?? 'single_choice';
+        final subCorrect = sub['correct_answers'];
+        final subGiven = givenMap['sub_$i'];
+        if (subType == 'multiple_response') {
+          final correctSet = Set<String>.from(subCorrect as List? ?? []);
+          final givenSet = Set<String>.from(subGiven as List? ?? []);
+          if (correctSet.length != givenSet.length ||
+              !correctSet.containsAll(givenSet)) {
+            return false;
+          }
+        } else {
+          final correctId = (subCorrect is List && subCorrect.isNotEmpty)
+              ? subCorrect.first
+              : null;
+          if (subGiven != correctId) return false;
+        }
+      }
+      return true;
+    }
     return false;
   }
 }

@@ -151,7 +151,26 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
               final i = entry.key;
               try {
                 final sub = Map<String, dynamic>.from(entry.value as Map);
-                final subQuestion = Question.fromJson(sub);
+                // ATTENZIONE: dentro "subQuestions" il campo "options" è
+                // salvato come lista PIATTA di scelte (es.
+                // [{"id":"a","text":"..."}]), non già avvolto in una mappa
+                // con chiave "options" come si aspetta Question.fromJson.
+                // Va ricostruita ESATTAMENTE come fa
+                // `_questionFromMap` in case_scenario_widget.dart (unica
+                // altra fonte di verità per questa trasformazione) —
+                // altrimenti il cast fallisce silenziosamente e qui
+                // comparirebbe sempre "—" anche con dati corretti.
+                final subQuestion = Question(
+                  id: sub['id'] as String? ?? '',
+                  domain: question.domain,
+                  type: sub['type'] as String? ?? 'single_choice',
+                  questionText: sub['question_text'] as String? ?? '',
+                  options: {'options': sub['options']},
+                  correctAnswers: sub['correct_answers'],
+                  explanation: sub['explanation'] as String? ?? '',
+                  source: question.source,
+                  topic: question.topic,
+                );
                 return 'Sotto-domanda ${i + 1}: '
                     '${_correctAnswerSummary(subQuestion)}';
               } catch (_) {

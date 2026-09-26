@@ -30,8 +30,10 @@ class PulldownWidget extends StatefulWidget {
 
 class _PulldownWidgetState extends State<PulldownWidget> {
   final Map<String, String> _selections = {};
+  bool _confirmed = false;
 
   void _confirm() {
+    setState(() => _confirmed = true);
     widget.onAnswered(_selections);
   }
 
@@ -55,10 +57,28 @@ class _PulldownWidgetState extends State<PulldownWidget> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: _selections.length == blanks.length ? _confirm : null,
-              child: const Text('Conferma risposta'),
-            ),
+            child: _confirmed
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Risposta confermata',
+                        style: AppTextStyles.caption,
+                      ),
+                    ],
+                  )
+                : TextButton(
+                    onPressed: _selections.length == blanks.length
+                        ? _confirm
+                        : null,
+                    child: const Text('Conferma risposta'),
+                  ),
           ),
         ],
       ],
@@ -100,7 +120,7 @@ class _PulldownWidgetState extends State<PulldownWidget> {
             items: choices
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),
-            onChanged: (widget.revealed || widget.locked)
+            onChanged: (widget.revealed || widget.locked || _confirmed)
                 ? null
                 : (value) {
                     if (value == null) return;

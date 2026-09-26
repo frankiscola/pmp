@@ -86,6 +86,7 @@ class MatchingWidget extends StatefulWidget {
 class _MatchingWidgetState extends State<MatchingWidget> {
   final Map<String, String> _matches = {}; // leftId -> rightId
   String? _activeLeftId;
+  bool _confirmed = false;
 
   // Ordine mescolato della colonna destra, calcolato una sola volta per
   // domanda (in initState) così resta stabile durante i rebuild del widget.
@@ -108,6 +109,7 @@ class _MatchingWidgetState extends State<MatchingWidget> {
     if (oldWidget.question.id != widget.question.id) {
       _matches.clear();
       _activeLeftId = null;
+      _confirmed = false;
       _setupForQuestion();
     }
   }
@@ -132,13 +134,16 @@ class _MatchingWidgetState extends State<MatchingWidget> {
   }
 
   void _selectLeft(String leftId) {
-    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
-    if (widget.revealed || widget.locked) return;
+    // Dopo la rivelazione, il blocco per ripasso o la conferma, non si
+    // cambia più.
+    if (widget.revealed || widget.locked || _confirmed) return;
     setState(() => _activeLeftId = _activeLeftId == leftId ? null : leftId);
   }
 
   void _selectRight(String rightId) {
-    if (widget.revealed || widget.locked || _activeLeftId == null) return;
+    if (widget.revealed || widget.locked || _confirmed || _activeLeftId == null) {
+      return;
+    }
     setState(() {
       // NOTA: non rimuoviamo eventuali abbinamenti preesistenti verso
       // questo stesso rightId. Alcune domande (es. teoria di Herzberg, con
@@ -153,6 +158,7 @@ class _MatchingWidgetState extends State<MatchingWidget> {
   }
 
   void _confirm() {
+    setState(() => _confirmed = true);
     widget.onAnswered(_matches);
   }
 
@@ -194,10 +200,28 @@ class _MatchingWidgetState extends State<MatchingWidget> {
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: _matches.length == left.length ? _confirm : null,
-              child: const Text('Conferma abbinamenti'),
-            ),
+            child: _confirmed
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Abbinamenti confermati',
+                        style: AppTextStyles.caption,
+                      ),
+                    ],
+                  )
+                : TextButton(
+                    onPressed: _matches.length == left.length
+                        ? _confirm
+                        : null,
+                    child: const Text('Conferma abbinamenti'),
+                  ),
           ),
         ],
       ],

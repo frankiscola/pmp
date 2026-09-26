@@ -132,7 +132,7 @@ class _ScoreScreenState extends State<ScoreScreen> {
                             widget.session.settings.showLeaderboard) ...[
                           const SizedBox(height: 8),
                           Text(
-                            'Sei arrivato ${rank}º su ${_allParticipants.length}',
+                            'Sei arrivato $rankº su ${_allParticipants.length}',
                             style: AppTextStyles.bodyLarge.copyWith(
                               color: Colors.white.withValues(alpha: 0.85),
                             ),
@@ -285,9 +285,7 @@ class _ReviewList extends StatelessWidget {
       children: questions.map((q) {
         final color = AppColors.domainColor(q.domain);
         final text = q.questionText;
-        final truncated = text.length > 90
-            ? '${text.substring(0, 90)}…'
-            : text;
+        final truncated = text.length > 90 ? '${text.substring(0, 90)}…' : text;
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Material(

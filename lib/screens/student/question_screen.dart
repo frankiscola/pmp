@@ -299,16 +299,23 @@ class _QuestionScreenState extends State<QuestionScreen> {
                     ),
                   ),
                 ] else if (alreadyAnswered && !revealed) ...[
-                  const SizedBox(height: 20),
-                  Center(
-                    child: Text(
-                      feedbackEnabled
-                          ? 'Risposta inviata — puoi ancora cambiarla finché il trainer non rivela la risposta corretta.'
-                          : 'Risposta inviata! Vedrai il punteggio a fine esame.',
-                      style: AppTextStyles.caption,
-                      textAlign: TextAlign.center,
+                  // NOTA: da quando ogni tipo di domanda richiede una
+                  // conferma esplicita per bloccarsi, "alreadyAnswered" qui
+                  // significa sempre "confermata" — il widget sopra mostra
+                  // già il proprio indicatore "Risposta confermata", quindi
+                  // questa scritta serve solo per la modalità senza feedback
+                  // immediato (dove il widget non mostra nulla di suo dopo
+                  // la conferma, dato che non c'è mai un reveal).
+                  if (!feedbackEnabled) ...[
+                    const SizedBox(height: 20),
+                    Center(
+                      child: Text(
+                        'Risposta inviata! Vedrai il punteggio a fine esame.',
+                        style: AppTextStyles.caption,
+                        textAlign: TextAlign.center,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
                 if (revealed) ...[
                   if (showExplanationToStudent) ...[

@@ -48,7 +48,8 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   bool _showLeaderboard = false;
   String _timerMode = AppConstants.timerPerQuestion;
   int _timerSecondsPerQuestion = 90;
-  int _totalExamMinutes = AppConstants.fullExamMinutes; // default 240, come l'esame reale
+  int _totalExamMinutes =
+      AppConstants.fullExamMinutes; // default 240, come l'esame reale
   late final TextEditingController _totalExamMinutesController =
       TextEditingController(text: '$_totalExamMinutes');
   final FocusNode _totalExamMinutesFocusNode = FocusNode();
@@ -115,9 +116,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   Future<void> _createSession() async {
     setState(() => _creating = true);
     try {
-      final excludeIds = _group != null
-          ? _group!.usedQuestionIds.toSet()
-          : null;
+      final excludeIds = _group?.usedQuestionIds.toSet();
 
       Map<String, double>? domainAccuracy;
       if (_group != null && _adaptiveSelection) {
@@ -164,8 +163,10 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
           questionIds,
         );
         _group = _group!.copyWith(
-          usedQuestionIds: {..._group!.usedQuestionIds, ...questionIds}
-              .toList(),
+          usedQuestionIds: {
+            ..._group!.usedQuestionIds,
+            ...questionIds,
+          }.toList(),
         );
       }
 
@@ -253,9 +254,9 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
     // TrainerHomeScreen quando si sceglie/crea un gruppo: questa vecchia
     // istanza resta semplicemente sotto nello stack di navigazione, e il
     // trainer può tornare indietro con il pulsante "back".
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const GroupSelectionScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const GroupSelectionScreen()));
   }
 
   @override
@@ -412,10 +413,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Spiegazione',
-                      style: AppTextStyles.titleMedium,
-                    ),
+                    const Text('Spiegazione', style: AppTextStyles.titleMedium),
                     const SizedBox(height: 4),
                     const Text(
                       'A chi mostrare la spiegazione quando il trainer '
@@ -566,14 +564,17 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
   /// sottoinsieme scelto — le stesse usate davvero da selectQuestionSet.
   String _domainsSubtitle() {
     if (_selectedDomains.length == 3) {
-      final parts = [
-        AppConstants.domainPeople,
-        AppConstants.domainProcess,
-        AppConstants.domainBusinessEnvironment,
-      ].map((d) {
-        final pct = (AppConstants.domainWeights[d]! * 100).round();
-        return '${AppConstants.domainLabels[d]} $pct%';
-      }).join(' · ');
+      final parts =
+          [
+                AppConstants.domainPeople,
+                AppConstants.domainProcess,
+                AppConstants.domainBusinessEnvironment,
+              ]
+              .map((d) {
+                final pct = (AppConstants.domainWeights[d]! * 100).round();
+                return '${AppConstants.domainLabels[d]} $pct%';
+              })
+              .join(' · ');
       return 'Tutti e tre i domini, nelle proporzioni ufficiali ECO 2026 ($parts).';
     }
     if (_selectedDomains.length == 1) {
@@ -586,12 +587,14 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
       0,
       (sum, d) => sum + (AppConstants.domainWeights[d] ?? 0),
     );
-    final parts = _selectedDomains.map((d) {
-      final pct = weightSum > 0
-          ? ((AppConstants.domainWeights[d] ?? 0) / weightSum * 100).round()
-          : (100 / _selectedDomains.length).round();
-      return '${AppConstants.domainLabels[d]} ≈ $pct%';
-    }).join(' · ');
+    final parts = _selectedDomains
+        .map((d) {
+          final pct = weightSum > 0
+              ? ((AppConstants.domainWeights[d] ?? 0) / weightSum * 100).round()
+              : (100 / _selectedDomains.length).round();
+          return '${AppConstants.domainLabels[d]} ≈ $pct%';
+        })
+        .join(' · ');
     return 'Solo i domini selezionati, nel loro rapporto ECO 2026 ($parts).';
   }
 
@@ -634,9 +637,7 @@ class _TrainerHomeScreenState extends State<TrainerHomeScreen> {
                 IconButton(
                   tooltip: 'Reset domande gruppo',
                   icon: const Icon(Icons.restart_alt),
-                  onPressed: group.usedQuestionIds.isEmpty
-                      ? null
-                      : _resetGroup,
+                  onPressed: group.usedQuestionIds.isEmpty ? null : _resetGroup,
                 ),
               TextButton(
                 onPressed: _changeGroup,

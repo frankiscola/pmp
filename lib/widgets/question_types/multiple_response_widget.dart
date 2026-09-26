@@ -32,16 +32,19 @@ class MultipleResponseWidget extends StatefulWidget {
 
 class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
   final Set<String> _selected = {};
+  bool _confirmed = false;
 
   void _toggle(String id) {
-    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
-    if (widget.revealed || widget.locked) return;
+    // Dopo la rivelazione, il blocco per ripasso o la conferma, non si
+    // cambia più.
+    if (widget.revealed || widget.locked || _confirmed) return;
     setState(() {
       _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
     });
   }
 
   void _confirm() {
+    setState(() => _confirmed = true);
     widget.onAnswered(_selected.toList());
   }
 
@@ -133,10 +136,26 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: _selected.isEmpty ? null : _confirm,
-              child: const Text('Conferma risposta'),
-            ),
+            child: _confirmed
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Risposta confermata',
+                        style: AppTextStyles.caption,
+                      ),
+                    ],
+                  )
+                : TextButton(
+                    onPressed: _selected.isEmpty ? null : _confirm,
+                    child: const Text('Conferma risposta'),
+                  ),
           ),
         ],
       ],

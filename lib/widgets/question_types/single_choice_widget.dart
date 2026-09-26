@@ -7,8 +7,9 @@ import '../../models/question.dart';
 /// Multiple-Choice Single Response — il tipo più comune (~50% dell'esame).
 ///
 /// Comportamento:
-/// - Al primo tap la scelta si BLOCCA (non modificabile) e appare in blu
-///   neutro — nessun giudizio di correttezza ancora.
+/// - Lo studente può cambiare selezione liberamente (blu neutro) finché non
+///   preme "Conferma risposta": solo da quel momento si blocca davvero e
+///   viene inviata al trainer.
 /// - Solo quando [revealed] diventa true (il trainer ha premuto "Rivela
 ///   risposta") i colori cambiano a verde/rosso in base alla correttezza.
 class SingleChoiceWidget extends StatefulWidget {
@@ -34,12 +35,22 @@ class SingleChoiceWidget extends StatefulWidget {
 
 class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
   String? _selectedId;
+  bool _confirmed = false;
 
   void _select(String optionId) {
-    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
-    if (widget.revealed || widget.locked) return;
+    // Dopo la rivelazione, il blocco per ripasso o la conferma, non si
+    // cambia più. NOTA: qui NON si chiama più onAnswered ad ogni tap — solo
+    // _confirm() lo fa, per essere coerenti con gli altri tipi di domanda
+    // (dove "ha risposto" nella dashboard del trainer significa sempre "ha
+    // confermato", mai "ha toccato qualcosa mentre ci pensava ancora").
+    if (widget.revealed || widget.locked || _confirmed) return;
     setState(() => _selectedId = optionId);
-    widget.onAnswered(optionId);
+  }
+
+  void _confirm() {
+    if (_selectedId == null) return;
+    setState(() => _confirmed = true);
+    widget.onAnswered(_selectedId!);
   }
 
   @override
@@ -58,7 +69,8 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: options.map((opt) {
+      children: [
+        ...options.map((opt) {
         final id = opt['id'] as String;
         final text = opt['text'] as String;
         final isSelected = _selectedId == id;
@@ -138,7 +150,34 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
             ),
           ),
         );
-      }).toList(),
+      }),
+        if (!widget.revealed && !widget.locked) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _confirmed
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Risposta confermata',
+                        style: AppTextStyles.caption,
+                      ),
+                    ],
+                  )
+                : TextButton(
+                    onPressed: _selectedId == null ? null : _confirm,
+                    child: const Text('Conferma risposta'),
+                  ),
+          ),
+        ],
+      ],
     );
   }
 }

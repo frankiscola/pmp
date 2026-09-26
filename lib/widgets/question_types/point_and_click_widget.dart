@@ -32,6 +32,7 @@ class PointAndClickWidget extends StatefulWidget {
 
 class _PointAndClickWidgetState extends State<PointAndClickWidget> {
   String? _selectedId;
+  bool _confirmed = false;
 
   List<Map<String, dynamic>> get _hotspots => List<Map<String, dynamic>>.from(
     widget.question.options['hotspots'] as List? ?? [],
@@ -45,8 +46,10 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
   }
 
   void _handleTap(Offset localPosition, Size size) {
-    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
-    if (widget.revealed || widget.locked) return;
+    // Dopo la rivelazione, il blocco per ripasso o la conferma, non si
+    // cambia più. NOTA: qui NON si chiama più onAnswered ad ogni tap — solo
+    // _confirm() lo fa (vedi single_choice_widget.dart per lo stesso motivo).
+    if (widget.revealed || widget.locked || _confirmed) return;
     const hitRadius = 34.0;
     String? tappedId;
     double bestDistance = double.infinity;
@@ -61,8 +64,13 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
     }
     if (tappedId != null) {
       setState(() => _selectedId = tappedId);
-      widget.onAnswered(tappedId);
     }
+  }
+
+  void _confirm() {
+    if (_selectedId == null) return;
+    setState(() => _confirmed = true);
+    widget.onAnswered(_selectedId!);
   }
 
   @override
@@ -109,12 +117,30 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
         Text(
           widget.revealed
               ? 'Risultato'
-              : (_selectedId == null
-                    ? 'Tocca il punto corretto nel diagramma'
-                    : 'Selezionato — tocca un altro punto per cambiare'),
+              : (_confirmed
+                    ? 'Risposta confermata'
+                    : (_selectedId == null
+                          ? 'Tocca il punto corretto nel diagramma'
+                          : 'Selezionato — tocca un altro punto per cambiare')),
           style: AppTextStyles.label,
           textAlign: TextAlign.center,
         ),
+        if (!widget.revealed && !widget.locked) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _confirmed
+                ? const Icon(
+                    Icons.check_circle,
+                    size: 20,
+                    color: AppColors.success,
+                  )
+                : TextButton(
+                    onPressed: _selectedId == null ? null : _confirm,
+                    child: const Text('Conferma risposta'),
+                  ),
+          ),
+        ],
       ],
     );
   }
