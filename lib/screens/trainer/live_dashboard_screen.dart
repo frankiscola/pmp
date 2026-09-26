@@ -165,6 +165,29 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
     }
   }
 
+  /// Torna alla domanda precedente — utile se il trainer è andato avanti
+  /// per sbaglio o vuole ridiscuterla con la classe prima di proseguire.
+  ///
+  /// Riusa esattamente lo stesso percorso di [SupabaseService.goToQuestionIndex]
+  /// già usato per "Prossima domanda" (è generico, non presuppone di andare
+  /// solo in avanti): imposta `current_question_index` e resetta
+  /// `answer_revealed` a false, così la domanda precedente riparte "non
+  /// rivelata" — esattamente come una domanda nuova — e tutti gli studenti
+  /// vengono sincronizzati all'istante via realtime.
+  ///
+  /// Chi aveva già risposto la ritrova segnata come "già risposta" e può
+  /// cambiare idea finché non viene rivelata di nuovo: `submitAnswer`
+  /// aggiorna la riga esistente invece di duplicarla, correggendo anche il
+  /// punteggio se la correttezza cambia — nessuna modifica lato studente è
+  /// stata necessaria per questo.
+  Future<void> _previousQuestion(int currentIndex) async {
+    if (currentIndex <= 0) return;
+    await SupabaseService.instance.goToQuestionIndex(
+      widget.session.id,
+      currentIndex - 1,
+    );
+  }
+
   Future<void> _nextQuestion(int currentIndex) async {
     final nextIndex = currentIndex + 1;
     if (nextIndex >= _questions.length) {
@@ -233,9 +256,9 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
 
     await SupabaseService.instance.finishSession(widget.session.id);
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => ResultsScreen(session: widget.session)),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => ResultsScreen(session: widget.session)));
   }
 
   @override
@@ -670,15 +693,39 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
                     ),
                   ),
                 const SizedBox(height: 12),
-                AppButton(
-                  label: index + 1 >= _questions.length
-                      ? 'Termina esame'
-                      : 'Prossima domanda',
-                  icon: Icons.arrow_forward,
-                  fullWidth: true,
-                  onPressed: session.status == AppConstants.sessionPaused
-                      ? null
-                      : () => _nextQuestion(index),
+                Row(
+                  children: [
+                    // Non in Expanded/fullWidth di proposito: prende solo
+                    // lo spazio del suo contenuto (icona, senza etichetta),
+                    // così resta stretto e il bottone principale accanto
+                    // mantiene tutto il risalto.
+                    AppButton(
+                      label: '',
+                      icon: Icons.arrow_back,
+                      variant: AppButtonVariant.outline,
+                      // Disabilitato sulla prima domanda (non c'è una
+                      // precedente) e durante la pausa, come il bottone
+                      // "Prossima domanda" qui accanto.
+                      onPressed:
+                          (index == 0 ||
+                              session.status == AppConstants.sessionPaused)
+                          ? null
+                          : () => _previousQuestion(index),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AppButton(
+                        label: index + 1 >= _questions.length
+                            ? 'Termina esame'
+                            : 'Prossima domanda',
+                        icon: Icons.arrow_forward,
+                        fullWidth: true,
+                        onPressed: session.status == AppConstants.sessionPaused
+                            ? null
+                            : () => _nextQuestion(index),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
