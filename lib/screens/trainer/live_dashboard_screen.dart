@@ -352,7 +352,14 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
               ),
             ],
           ),
-          body: Padding(
+          // SingleChildScrollView invece di un Padding fisso: prima, se il
+          // contenuto sopra le tab (domanda lunga, risposta corretta,
+          // spiegazione lunga) era più alto del previsto, l'unico elemento
+          // flessibile (l'area delle tab, sotto) veniva schiacciato o
+          // andava in overflow, e la parte più in basso (pulsanti inclusi)
+          // restava tagliata fuori senza modo di raggiungerla. Ora l'intera
+          // pagina scorre quando serve.
+          body: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -493,7 +500,14 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
                   ],
                 ),
                 const SizedBox(height: 12),
-                Expanded(
+                // Altezza fissa (non più Expanded, incompatibile con lo
+                // SingleChildScrollView sopra) proporzionale allo schermo:
+                // resta comoda su schermo pieno ma permette anche a questa
+                // sezione, se serve, di scorrere al suo interno (le singole
+                // tab sono già scrollabili) senza bloccare lo scroll della
+                // pagina intera.
+                SizedBox(
+                  height: MediaQuery.sizeOf(context).height * 0.42,
                   child: TabBarView(
                     controller: _tabController,
                     children: [
@@ -695,25 +709,28 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen>
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    // Non in Expanded/fullWidth di proposito: prende solo
-                    // lo spazio del suo contenuto (icona, senza etichetta),
-                    // così resta stretto e il bottone principale accanto
-                    // mantiene tutto il risalto.
-                    AppButton(
-                      label: '',
-                      icon: Icons.arrow_back,
-                      variant: AppButtonVariant.outline,
-                      // Disabilitato sulla prima domanda (non c'è una
-                      // precedente) e durante la pausa, come il bottone
-                      // "Prossima domanda" qui accanto.
-                      onPressed:
-                          (index == 0 ||
-                              session.status == AppConstants.sessionPaused)
-                          ? null
-                          : () => _previousQuestion(index),
+                    // flex: 1 contro flex: 4 sul bottone accanto → esattamente
+                    // 1/4 della sua larghezza, come richiesto.
+                    Expanded(
+                      flex: 1,
+                      child: AppButton(
+                        label: '',
+                        icon: Icons.arrow_back,
+                        variant: AppButtonVariant.outline,
+                        fullWidth: true,
+                        // Disabilitato sulla prima domanda (non c'è una
+                        // precedente) e durante la pausa, come il bottone
+                        // "Prossima domanda" qui accanto.
+                        onPressed:
+                            (index == 0 ||
+                                session.status == AppConstants.sessionPaused)
+                            ? null
+                            : () => _previousQuestion(index),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
+                      flex: 4,
                       child: AppButton(
                         label: index + 1 >= _questions.length
                             ? 'Termina esame'
