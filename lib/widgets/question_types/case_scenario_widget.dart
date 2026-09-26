@@ -13,6 +13,11 @@ import 'multiple_response_widget.dart';
 class CaseScenarioWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
+
+  /// Revisit di una domanda già risposta: blocca l'interazione su TUTTE le
+  /// sotto-domande senza mostrare corretto/sbagliato (quello resta
+  /// esclusivo di [revealed]).
+  final bool locked;
   final ValueChanged<Map<String, dynamic>> onAnswered;
 
   const CaseScenarioWidget({
@@ -20,6 +25,7 @@ class CaseScenarioWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
   });
 
   @override
@@ -114,6 +120,7 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
       return MultipleResponseWidget(
         question: subQuestion,
         revealed: widget.revealed,
+        locked: widget.locked,
         onAnswered: (answer) {
           _subAnswers['sub_$index'] = answer;
           widget.onAnswered(_subAnswers);
@@ -123,6 +130,7 @@ class _CaseScenarioWidgetState extends State<CaseScenarioWidget> {
     return SingleChoiceWidget(
       question: subQuestion,
       revealed: widget.revealed,
+      locked: widget.locked,
       onAnswered: (answer) {
         _subAnswers['sub_$index'] = answer;
         widget.onAnswered(_subAnswers);

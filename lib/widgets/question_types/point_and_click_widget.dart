@@ -12,6 +12,10 @@ import '../../models/question.dart';
 class PointAndClickWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
+
+  /// Revisit di una domanda già risposta: blocca l'interazione senza
+  /// mostrare corretto/sbagliato (quello resta esclusivo di [revealed]).
+  final bool locked;
   final ValueChanged<String> onAnswered;
 
   const PointAndClickWidget({
@@ -19,6 +23,7 @@ class PointAndClickWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
   });
 
   @override
@@ -40,7 +45,8 @@ class _PointAndClickWidgetState extends State<PointAndClickWidget> {
   }
 
   void _handleTap(Offset localPosition, Size size) {
-    if (widget.revealed) return; // dopo la rivelazione non si cambia più
+    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
+    if (widget.revealed || widget.locked) return;
     const hitRadius = 34.0;
     String? tappedId;
     double bestDistance = double.infinity;

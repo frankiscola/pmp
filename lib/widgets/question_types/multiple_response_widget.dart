@@ -12,6 +12,10 @@ import '../../models/question.dart';
 class MultipleResponseWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
+
+  /// Revisit di una domanda già risposta: blocca l'interazione senza
+  /// mostrare corretto/sbagliato (quello resta esclusivo di [revealed]).
+  final bool locked;
   final ValueChanged<List<String>> onAnswered;
 
   const MultipleResponseWidget({
@@ -19,6 +23,7 @@ class MultipleResponseWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
   });
 
   @override
@@ -29,7 +34,8 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
   final Set<String> _selected = {};
 
   void _toggle(String id) {
-    if (widget.revealed) return; // dopo la rivelazione non si cambia più
+    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
+    if (widget.revealed || widget.locked) return;
     setState(() {
       _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
     });
@@ -123,7 +129,7 @@ class _MultipleResponseWidgetState extends State<MultipleResponseWidget> {
             ),
           );
         }),
-        if (!widget.revealed) ...[
+        if (!widget.revealed && !widget.locked) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,

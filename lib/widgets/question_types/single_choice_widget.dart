@@ -14,6 +14,10 @@ import '../../models/question.dart';
 class SingleChoiceWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
+
+  /// Revisit di una domanda già risposta: blocca l'interazione senza
+  /// mostrare corretto/sbagliato (quello resta esclusivo di [revealed]).
+  final bool locked;
   final ValueChanged<String> onAnswered;
 
   const SingleChoiceWidget({
@@ -21,6 +25,7 @@ class SingleChoiceWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
   });
 
   @override
@@ -31,7 +36,8 @@ class _SingleChoiceWidgetState extends State<SingleChoiceWidget> {
   String? _selectedId;
 
   void _select(String optionId) {
-    if (widget.revealed) return; // dopo la rivelazione non si cambia più
+    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
+    if (widget.revealed || widget.locked) return;
     setState(() => _selectedId = optionId);
     widget.onAnswered(optionId);
   }

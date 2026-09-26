@@ -14,6 +14,13 @@ import '../question_types/point_and_click_widget.dart';
 class QuestionTypeRouter extends StatelessWidget {
   final Question question;
   final bool revealed;
+
+  /// True quando il trainer è tornato a una domanda a cui lo studente aveva
+  /// già risposto (revisit), ma senza ancora premere "Rivela risposta".
+  /// A differenza di [revealed], NON mostra corretto/sbagliato: blocca solo
+  /// l'interazione, per evitare che lo studente cambi risposta copiando
+  /// dalla discussione in aula durante il ripasso.
+  final bool locked;
   final ValueChanged<dynamic> onAnswered;
 
   const QuestionTypeRouter({
@@ -21,6 +28,7 @@ class QuestionTypeRouter extends StatelessWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
   });
 
   @override
@@ -30,30 +38,35 @@ class QuestionTypeRouter extends StatelessWidget {
         return MultipleResponseWidget(
           question: question,
           revealed: revealed,
+          locked: locked,
           onAnswered: onAnswered,
         );
       case AppConstants.typeMatching:
         return MatchingWidget(
           question: question,
           revealed: revealed,
+          locked: locked,
           onAnswered: onAnswered,
         );
       case AppConstants.typePulldown:
         return PulldownWidget(
           question: question,
           revealed: revealed,
+          locked: locked,
           onAnswered: onAnswered,
         );
       case AppConstants.typeCaseScenario:
         return CaseScenarioWidget(
           question: question,
           revealed: revealed,
+          locked: locked,
           onAnswered: onAnswered,
         );
       case AppConstants.typeHotspot:
         return PointAndClickWidget(
           question: question,
           revealed: revealed,
+          locked: locked,
           onAnswered: onAnswered,
         );
       case AppConstants.typeGraphic:
@@ -63,6 +76,7 @@ class QuestionTypeRouter extends StatelessWidget {
         return SingleChoiceWidget(
           question: question,
           revealed: revealed,
+          locked: locked,
           onAnswered: onAnswered,
         );
       case AppConstants.typeSingleChoice:
@@ -70,6 +84,7 @@ class QuestionTypeRouter extends StatelessWidget {
         return SingleChoiceWidget(
           question: question,
           revealed: revealed,
+          locked: locked,
           onAnswered: onAnswered,
         );
     }

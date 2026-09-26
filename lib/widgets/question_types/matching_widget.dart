@@ -28,6 +28,10 @@ const List<Color> _kPairBorderColors = [
 class MatchingWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
+
+  /// Revisit di una domanda già risposta: blocca l'interazione senza
+  /// mostrare corretto/sbagliato (quello resta esclusivo di [revealed]).
+  final bool locked;
   final ValueChanged<Map<String, String>> onAnswered;
 
   const MatchingWidget({
@@ -35,6 +39,7 @@ class MatchingWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
   });
 
   /// Ordine "mescolato" della colonna destra per [question] — deterministico
@@ -127,12 +132,13 @@ class _MatchingWidgetState extends State<MatchingWidget> {
   }
 
   void _selectLeft(String leftId) {
-    if (widget.revealed) return; // dopo la rivelazione non si cambia più
+    // Dopo la rivelazione, o durante il blocco per ripasso, non si cambia più.
+    if (widget.revealed || widget.locked) return;
     setState(() => _activeLeftId = _activeLeftId == leftId ? null : leftId);
   }
 
   void _selectRight(String rightId) {
-    if (widget.revealed || _activeLeftId == null) return;
+    if (widget.revealed || widget.locked || _activeLeftId == null) return;
     setState(() {
       // NOTA: non rimuoviamo eventuali abbinamenti preesistenti verso
       // questo stesso rightId. Alcune domande (es. teoria di Herzberg, con
@@ -184,7 +190,7 @@ class _MatchingWidgetState extends State<MatchingWidget> {
             ),
           ],
         ),
-        if (!widget.revealed) ...[
+        if (!widget.revealed && !widget.locked) ...[
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,

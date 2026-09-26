@@ -39,6 +39,11 @@ class _QuestionScreenState extends State<QuestionScreen> {
   dynamic _currentAnswer;
   DateTime? _questionStartedAt;
 
+  /// Indice più avanti mai mostrato a questo studente in questa sessione.
+  /// Se l'indice corrente scende sotto questo valore, il trainer è tornato
+  /// indietro a una domanda già vista ("ripasso"): vedi [build].
+  int _maxIndexReached = -1;
+
   @override
   void initState() {
     super.initState();
@@ -178,6 +183,17 @@ class _QuestionScreenState extends State<QuestionScreen> {
           return const BreakView();
         }
 
+        // Aggiorna il massimo indice mai visto (semplice assegnazione, non
+        // richiede setState: siamo già dentro un build innescato dallo
+        // StreamBuilder della sessione).
+        if (index > _maxIndexReached) {
+          _maxIndexReached = index;
+        }
+        // Il trainer è tornato a una domanda già vista in precedenza
+        // ("ripasso"): blocchiamo l'interazione per evitare che lo
+        // studente cambi risposta copiando dalla discussione in aula.
+        final isRevisit = index < _maxIndexReached;
+
         final question = _questions[index];
         final feedbackEnabled =
             session.settings.feedbackMode == AppConstants.feedbackImmediate;
@@ -186,6 +202,10 @@ class _QuestionScreenState extends State<QuestionScreen> {
         // la modalità prevede feedback immediato E il trainer ha premuto
         // "Rivela risposta" per questa domanda.
         final revealed = feedbackEnabled && session.answerRevealed;
+        // Blocco per ripasso: SOLO se la domanda non è ancora stata
+        // rivelata (una volta rivelata, mostrare corretto/sbagliato è già
+        // di per sé "bloccante" — non serve sommare le due cose).
+        final locked = isRevisit && !revealed;
         // La spiegazione è un elemento separato dal "revealed" (che
         // controlla anche i colori corretto/sbagliato sulle opzioni): può
         // essere nascosta allo studente anche a reveal avvenuto, se il
@@ -262,13 +282,23 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   key: ValueKey('router_$index'),
                   question: question,
                   revealed: revealed,
+                  locked: locked,
                   onAnswered: (answer) {
                     _currentAnswer = answer;
                     _submit(index);
                     setState(() {});
                   },
                 ),
-                if (alreadyAnswered && !revealed) ...[
+                if (locked) ...[
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Text(
+                      'Il trainer sta rivedendo questa domanda — la tua risposta è bloccata.',
+                      style: AppTextStyles.caption,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ] else if (alreadyAnswered && !revealed) ...[
                   const SizedBox(height: 20),
                   Center(
                     child: Text(

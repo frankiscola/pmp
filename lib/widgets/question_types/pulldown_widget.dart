@@ -10,6 +10,10 @@ import '../../models/question.dart';
 class PulldownWidget extends StatefulWidget {
   final Question question;
   final bool revealed;
+
+  /// Revisit di una domanda già risposta: blocca l'interazione senza
+  /// mostrare corretto/sbagliato (quello resta esclusivo di [revealed]).
+  final bool locked;
   final ValueChanged<Map<String, String>> onAnswered;
 
   const PulldownWidget({
@@ -17,6 +21,7 @@ class PulldownWidget extends StatefulWidget {
     required this.question,
     required this.onAnswered,
     this.revealed = false,
+    this.locked = false,
   });
 
   @override
@@ -46,7 +51,7 @@ class _PulldownWidgetState extends State<PulldownWidget> {
           _buildDropdownRow(blank, correctMap),
           const SizedBox(height: 14),
         ],
-        if (!widget.revealed) ...[
+        if (!widget.revealed && !widget.locked) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
@@ -95,7 +100,7 @@ class _PulldownWidgetState extends State<PulldownWidget> {
             items: choices
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),
-            onChanged: widget.revealed
+            onChanged: (widget.revealed || widget.locked)
                 ? null
                 : (value) {
                     if (value == null) return;
